@@ -44,7 +44,7 @@ func (a *AuthMiddleware) Handle(next http.Handler) http.Handler {
 
 		claims, err := a.tokenSvc.ValidateAccessToken(token)
 		if err != nil {
-			utils.FromAppError(w, "", err)
+			utils.WriteError(w, http.StatusUnauthorized, "", apperror.Unauthorised, "invalid or expired token")
 			return
 		}
 
