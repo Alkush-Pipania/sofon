@@ -19,7 +19,7 @@ type Config struct {
 
 type AuthConfig struct {
 	Secret   string        `mapstructure:"secret" validate:"required"`
-	TokenTTL time.Duration `mapstructure:"token_ttl" validate:"require"`
+	TokenTTL time.Duration `mapstructure:"token_ttl" validate:"required"`
 }
 
 type AppConfig struct {
