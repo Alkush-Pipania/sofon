@@ -171,7 +171,22 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 
 	defer resp.Body.Close()
 
-	success := resp.StatusCode == int(monitor.ExpectedStatus) && latency <= int64(monitor.LatencyThresholdMs)
+	statusMatch, latencyMatch := false, false
+
+	if monitor.ExpectedStatus == 0 {
+		// DEFAULT BEHAVIOR: Treat any 2xx (Success) or 3xx (Redirect) as healthy
+		statusMatch = resp.StatusCode >= 200 && resp.StatusCode < 400
+	} else {
+		// STRICT BEHAVIOR: User provided a specific code, so it MUST match
+		statusMatch = resp.StatusCode == int(monitor.ExpectedStatus)
+	}
+
+	if monitor.LatencyThresholdMs > 0 {
+		// STRICT BEHAVIOR: User provided a threshold, so it MUST be faster than this
+		latencyMatch = latency <= int64(monitor.LatencyThresholdMs)
+	}
+
+	success := statusMatch && latencyMatch
 
 	return HTTPResult{
 		MonitorID: monitor.ID,
