@@ -1,61 +1,50 @@
 "use client";
 
-import { useActionState } from "react";
+import { useForm } from "react-hook-form";
+import { useState } from "react";
 import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { AuthCard } from "@/components/auth/auth-card";
 import { FormField } from "@/components/auth/form-input";
 import { SubmitButton } from "@/components/auth/submit-button";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
 import { post } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
-import { AxiosError } from "axios";
-import { CheckCircle2 } from "lucide-react";
+import { parseApiError } from "@/lib/api-error";
 
-interface RegisterState {
-    error?: string;
-    success?: boolean;
+interface RegisterForm {
+    name: string;
+    email: string;
+    password: string;
 }
 
 interface RegisterResponse {
     success: boolean;
     message: string;
-    data: {
-        user_id: string;
-    };
+    data: { user_id: string };
 }
 
 export default function RegisterPage() {
-    async function registerAction(_prev: RegisterState, formData: FormData): Promise<RegisterState> {
-        const name = formData.get("name") as string;
-        const email = formData.get("email") as string;
-        const password = formData.get("password") as string;
+    const [apiError, setApiError] = useState<string | null>(null);
+    const [success, setSuccess] = useState(false);
 
+    const {
+        register,
+        handleSubmit,
+        formState: { errors, isSubmitting },
+    } = useForm<RegisterForm>();
+
+    const onSubmit = async (data: RegisterForm) => {
+        setApiError(null);
         try {
-            await post<RegisterResponse>(ENDPOINTS.AUTH.REGISTER, {
-                name,
-                email,
-                password,
-            });
-
-            return { success: true };
+            await post<RegisterResponse>(ENDPOINTS.AUTH.REGISTER, data);
+            setSuccess(true);
         } catch (err) {
-            if (err instanceof AxiosError) {
-                const msg = err.response?.data?.message || err.response?.data?.error;
-                return { error: msg || "Registration failed. Please try again." };
-            }
-            return { error: "Something went wrong. Please try again." };
+            setApiError(parseApiError(err, "Registration failed."));
         }
-    }
+    };
 
-    const [state, action, pending] = useActionState(registerAction, {});
-
-    if (state.success) {
+    if (success) {
         return (
             <Card className="border-none shadow-none">
                 <CardContent className="flex flex-col items-center gap-4 pt-10 pb-8">
@@ -76,62 +65,47 @@ export default function RegisterPage() {
     }
 
     return (
-        <Card className="border-none shadow-none">
-            <CardHeader className="items-center gap-1">
-                <CardTitle className="text-2xl font-bold tracking-tight">
-                    Create your account
-                </CardTitle>
-                <CardDescription>
-                    Start monitoring your services in minutes.
-                </CardDescription>
-            </CardHeader>
+        <AuthCard
+            title="Create your account"
+            description="Start monitoring your services in minutes."
+            footer={{ text: "Already have an account?", linkText: "Sign In", linkHref: "/signin" }}
+        >
+            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
+                {apiError && (
+                    <p className="text-center text-sm text-destructive">{apiError}</p>
+                )}
 
-            <CardContent>
-                <form action={action} className="flex flex-col gap-5">
-                    {state.error && (
-                        <p className="text-center text-sm text-destructive">{state.error}</p>
-                    )}
+                <FormField
+                    label="Name"
+                    type="text"
+                    placeholder="Enter your full name..."
+                    error={errors.name}
+                    {...register("name", { required: "Name is required" })}
+                />
 
-                    <FormField
-                        label="Name"
-                        type="text"
-                        name="name"
-                        placeholder="Enter your full name..."
-                        required
-                    />
+                <FormField
+                    label="Email"
+                    type="email"
+                    placeholder="Enter your email address..."
+                    error={errors.email}
+                    {...register("email", { required: "Email is required" })}
+                />
 
-                    <FormField
-                        label="Email"
-                        type="email"
-                        name="email"
-                        placeholder="Enter your email address..."
-                        required
-                    />
+                <FormField
+                    label="Password"
+                    isPassword
+                    placeholder="Create a password..."
+                    error={errors.password}
+                    {...register("password", {
+                        required: "Password is required",
+                        minLength: { value: 8, message: "Must be at least 8 characters" },
+                    })}
+                />
 
-                    <FormField
-                        label="Password"
-                        type="password"
-                        name="password"
-                        placeholder="Create a password..."
-                        required
-                        minLength={8}
-                    />
-
-                    <SubmitButton pending={pending}>Create Account</SubmitButton>
-                </form>
-            </CardContent>
-
-            <CardFooter className="justify-center">
-                <p className="text-sm text-muted-foreground">
-                    Already have an account?{" "}
-                    <Link
-                        href="/signin"
-                        className="font-medium text-[#3B8CF0] hover:underline"
-                    >
-                        Sign In
-                    </Link>
-                </p>
-            </CardFooter>
-        </Card>
+                <SubmitButton pending={isSubmitting} loadingText="Creating account...">
+                    Create Account
+                </SubmitButton>
+            </form>
+        </AuthCard>
     );
 }

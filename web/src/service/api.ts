@@ -31,11 +31,14 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Handle 401 globally
+// Handle 401 globally — skip for auth endpoints (login/register handle their own errors)
 api.interceptors.response.use(
     (res) => res,
     (error: AxiosError) => {
-        if (error.response?.status === 401) {
+        const url = error.config?.url || "";
+        const isAuthRoute = url.includes("/users/login") || url.includes("/users/register");
+
+        if (error.response?.status === 401 && !isAuthRoute) {
             tokenStore.clear();
             if (typeof window !== "undefined") {
                 window.location.href = "/signin";

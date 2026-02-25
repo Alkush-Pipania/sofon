@@ -1,24 +1,32 @@
 "use client";
 
+import { forwardRef } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { InputHTMLAttributes } from "react";
+import { PasswordInput } from "@/components/ui/password-input";
+import { FieldError } from "react-hook-form";
 
-interface FormFieldProps extends InputHTMLAttributes<HTMLInputElement> {
+interface FormFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label: string;
-    error?: string;
+    error?: FieldError;
+    isPassword?: boolean;
 }
 
-export function FormField({ label, id, error, ...props }: FormFieldProps) {
-    const inputId = id || label.toLowerCase().replace(/\s+/g, "-");
+export const FormField = forwardRef<HTMLInputElement, FormFieldProps>(
+    ({ label, error, isPassword, id, ...props }, ref) => {
+        const inputId = id || label.toLowerCase().replace(/\s+/g, "-");
+        const InputComponent = isPassword ? PasswordInput : Input;
 
-    return (
-        <div className="flex flex-col gap-2">
-            <Label htmlFor={inputId}>{label}</Label>
-            <Input id={inputId} {...props} />
-            {error && (
-                <p className="text-sm text-destructive">{error}</p>
-            )}
-        </div>
-    );
-}
+        return (
+            <div className="flex flex-col gap-2">
+                <Label htmlFor={inputId}>{label}</Label>
+                <InputComponent ref={ref} id={inputId} {...props} />
+                {error && (
+                    <p className="text-sm text-destructive">{error.message}</p>
+                )}
+            </div>
+        );
+    }
+);
+
+FormField.displayName = "FormField";

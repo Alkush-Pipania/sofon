@@ -24,8 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useMonitorStore } from "@/store/monitor-store";
-import { AxiosError } from "axios";
+import { useMonitorStore, CreateMonitorRequest } from "@/store/monitor-store";
+import { parseApiError } from "@/lib/api-error";
 
 interface NewMonitorDialogProps {
     trigger?: React.ReactNode;
@@ -45,8 +45,8 @@ const DEFAULTS: MonitorFormData = {
     alert_email: "",
     interval_sec: 60,
     timeout_sec: 120,
-    latency_threshold_ms: 200,
-    expected_status: 200,
+    latency_threshold_ms: 0,
+    expected_status: 0,
 };
 
 export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
@@ -68,17 +68,18 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
         setError(null);
 
         try {
-            await createMonitor(form);
+            // Omit latency/status when 0 so backend receives null (not specified)
+            const { latency_threshold_ms, expected_status, ...rest } = form;
+            const payload: CreateMonitorRequest = { ...rest };
+            if (latency_threshold_ms) payload.latency_threshold_ms = latency_threshold_ms;
+            if (expected_status) payload.expected_status = expected_status;
+
+            await createMonitor(payload);
             setOpen(false);
             setForm({ ...DEFAULTS });
             setShowAdvanced(false);
         } catch (err: unknown) {
-            if (err instanceof AxiosError) {
-                const msg = err.response?.data?.message || err.response?.data?.error;
-                setError(msg || "Failed to create monitor.");
-            } else {
-                setError("Something went wrong. Please try again.");
-            }
+            setError(parseApiError(err, "Failed to create monitor."));
         } finally {
             setSubmitting(false);
         }
@@ -249,7 +250,7 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
                                     <Input
                                         id="mon-latency"
                                         type="number"
-                                        min={1}
+                                        min={0}
                                         value={form.latency_threshold_ms}
                                         onChange={(e) =>
                                             update(
@@ -280,7 +281,7 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
                                 <Input
                                     id="mon-status"
                                     type="number"
-                                    min={100}
+                                    min={0}
                                     max={599}
                                     value={form.expected_status}
                                     onChange={(e) =>

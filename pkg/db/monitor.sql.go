@@ -37,8 +37,8 @@ type CreateMonitorParams struct {
 	Url                string
 	IntervalSec        int32
 	TimeoutSec         int32
-	LatencyThresholdMs int32
-	ExpectedStatus     int32
+	LatencyThresholdMs pgtype.Int4
+	ExpectedStatus     pgtype.Int4
 	AlertEmail         pgtype.Text
 }
 
@@ -122,8 +122,8 @@ type GetMonitorRow struct {
 	AlertEmail         pgtype.Text
 	IntervalSec        int32
 	TimeoutSec         int32
-	LatencyThresholdMs int32
-	ExpectedStatus     int32
+	LatencyThresholdMs pgtype.Int4
+	ExpectedStatus     pgtype.Int4
 	Enabled            bool
 }
 
@@ -157,8 +157,8 @@ type GetMonitorByIDRow struct {
 	AlertEmail         pgtype.Text
 	IntervalSec        int32
 	TimeoutSec         int32
-	LatencyThresholdMs int32
-	ExpectedStatus     int32
+	LatencyThresholdMs pgtype.Int4
+	ExpectedStatus     pgtype.Int4
 	Enabled            bool
 }
 

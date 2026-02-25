@@ -62,3 +62,18 @@ func ToPgTimestamptz(time time.Time) pgtype.Timestamptz {
 		Valid: true,
 	}
 }
+
+func ToPgInt4(i *int32) pgtype.Int4 {
+	if i == nil {
+		return pgtype.Int4{Valid: false}
+	}
+	return pgtype.Int4{Int32: *i, Valid: true}
+}
+
+func FromPgInt4(i pgtype.Int4) *int32 {
+	if !i.Valid {
+		return nil
+	}
+	val := i.Int32
+	return &val
+}

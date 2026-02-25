@@ -173,17 +173,17 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 
 	statusMatch, latencyMatch := false, false
 
-	if monitor.ExpectedStatus == 0 {
+	if monitor.ExpectedStatus == nil {
 		// DEFAULT BEHAVIOR: Treat any 2xx (Success) or 3xx (Redirect) as healthy
 		statusMatch = resp.StatusCode >= 200 && resp.StatusCode < 400
 	} else {
 		// STRICT BEHAVIOR: User provided a specific code, so it MUST match
-		statusMatch = resp.StatusCode == int(monitor.ExpectedStatus)
+		statusMatch = resp.StatusCode == int(*monitor.ExpectedStatus)
 	}
 
-	if monitor.LatencyThresholdMs > 0 {
+	if monitor.LatencyThresholdMs != nil {
 		// STRICT BEHAVIOR: User provided a threshold, so it MUST be faster than this
-		latencyMatch = latency <= int64(monitor.LatencyThresholdMs)
+		latencyMatch = latency <= int64(*monitor.LatencyThresholdMs)
 	}
 
 	success := statusMatch && latencyMatch

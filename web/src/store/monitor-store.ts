@@ -9,8 +9,8 @@ export interface Monitor {
     alert_mail: string;
     interval_sec: number;
     timeout_sec: number;
-    latency_threshold_ms: number;
-    expected_status: number;
+    latency_threshold_ms: number | null;
+    expected_status: number | null;
     enabled: boolean;
 }
 
@@ -30,8 +30,8 @@ export interface CreateMonitorRequest {
     alert_email: string;
     interval_sec: number;
     timeout_sec: number;
-    latency_threshold_ms: number;
-    expected_status: number;
+    latency_threshold_ms?: number;
+    expected_status?: number;
 }
 
 interface CreateMonitorResponse {
