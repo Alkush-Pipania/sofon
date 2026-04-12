@@ -17,6 +17,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN mkdir -p /app/public
 
 # NEXT_PUBLIC_* vars are baked in at build time.
 # Pass the URL the browser will use to reach the API.
