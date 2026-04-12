@@ -1,0 +1,59 @@
+name: Release Installer Bundle
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare release bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp installer/install.sh dist/install.sh
+          chmod +x dist/install.sh
+
+          tar -czf dist/sofon-installer-${GITHUB_REF_NAME}.tar.gz \
+            installer/install.sh \
+            installer/setup.sh \
+            installer/deploy.sh \
+            installer/doctor.sh \
+            deploy/docker-compose.prod.yml \
+            deploy/config.production.yaml.tmpl \
+            deploy/Caddyfile.domain.tmpl \
+            deploy/Caddyfile.nodomain.tmpl \
+            deploy/env.production.example
+
+          shasum -a 256 dist/install.sh > dist/install.sh.sha256
+          shasum -a 256 dist/sofon-installer-${GITHUB_REF_NAME}.tar.gz > dist/sofon-installer-${GITHUB_REF_NAME}.tar.gz.sha256
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## One-line installer
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/Alkush-Pipania/sofon/${{ github.ref_name }}/installer/install.sh | sudo bash
+            ```
+
+            ## Version-pinned installer command
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/Alkush-Pipania/sofon/main/installer/install.sh | sudo bash -s -- --version ${{ github.ref_name }}
+            ```
+          files: |
+            dist/install.sh
+            dist/install.sh.sha256
+            dist/sofon-installer-${{ github.ref_name }}.tar.gz
+            dist/sofon-installer-${{ github.ref_name }}.tar.gz.sha256

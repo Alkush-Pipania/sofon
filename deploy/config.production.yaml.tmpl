@@ -1,0 +1,50 @@
+env: "production"
+service_name: "sofon"
+port: "8080"
+
+auth:
+  secret: "__SOFON_AUTH_SECRET__"
+  token_ttl: "30m"
+
+app:
+  job_channel_size: 500
+  result_channel_size: 500
+  alert_channel_size: 500
+
+scheduler:
+  interval: "30s"
+  batch_size: 100
+
+executor:
+  worker_count: 20
+  http_semaphore_count: 100
+
+alert:
+  worker_count: 10
+  owner_email: "__SOFON_OWNER_EMAIL__"
+  resend_api_key: "__SOFON_RESEND_API_KEY__"
+  kill_switch: __SOFON_ALERT_KILL_SWITCH__
+
+result_processor:
+  success_worker_count: 10
+  success_channel_size: 500
+  failure_worker_count: 10
+  failure_channel_size: 500
+
+redis:
+  url: "redis://redis:6379"
+  dial_timeout: "5s"
+  read_timeout: "3s"
+  write_timeout: "3s"
+  pool_size: 50
+  min_idle_conns: 10
+  conn_max_lifetime: "30m"
+  conn_max_idle_time: "10m"
+
+db:
+  url: "postgresql://__POSTGRES_USER__:__POSTGRES_PASSWORD__@postgres:5432/__POSTGRES_DB__?sslmode=disable"
+  max_open_conns: 25
+  min_idle_conns: 5
+  conn_max_lifetime: "30m"
+  conn_max_idle_time: "10m"
+  health_timeout: "5s"

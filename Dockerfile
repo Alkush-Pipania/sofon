@@ -24,6 +24,8 @@ RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
+LABEL org.opencontainers.image.source="https://github.com/Alkush-Pipania/sofon"
+
 # Copy server binary
 COPY --from=builder /app/bin/server ./server
 
