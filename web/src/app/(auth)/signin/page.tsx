@@ -1,25 +1,18 @@
 "use client";
 
-import { useActionState } from "react";
+import { useForm } from "react-hook-form";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { AuthCard } from "@/components/auth/auth-card";
 import { FormField } from "@/components/auth/form-input";
 import { SubmitButton } from "@/components/auth/submit-button";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
-import { post } from "@/service/api";
-import { tokenStore } from "@/service/api";
+import { post, tokenStore } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
-import { AxiosError } from "axios";
+import { parseApiError } from "@/lib/api-error";
 
-interface SignInState {
-    error?: string;
+interface LoginForm {
+    email: string;
+    password: string;
 }
 
 interface LoginResponse {
@@ -33,79 +26,56 @@ interface LoginResponse {
 
 export default function SignInPage() {
     const router = useRouter();
+    const [apiError, setApiError] = useState<string | null>(null);
 
-    async function signInAction(_prev: SignInState, formData: FormData): Promise<SignInState> {
-        const email = formData.get("email") as string;
-        const password = formData.get("password") as string;
+    const {
+        register,
+        handleSubmit,
+        formState: { errors, isSubmitting },
+    } = useForm<LoginForm>();
 
+    const onSubmit = async (data: LoginForm) => {
+        setApiError(null);
         try {
-            const res = await post<LoginResponse>(ENDPOINTS.AUTH.LOGIN, {
-                email,
-                password,
-            });
-
+            const res = await post<LoginResponse>(ENDPOINTS.AUTH.LOGIN, data);
             tokenStore.set(res.data.access_token);
             router.push("/monitors");
-            return {};
         } catch (err) {
-            if (err instanceof AxiosError) {
-                const msg = err.response?.data?.message || err.response?.data?.error;
-                return { error: msg || "Invalid email or password." };
-            }
-            return { error: "Something went wrong. Please try again." };
+            setApiError(parseApiError(err, "Invalid email or password."));
         }
-    }
-
-    const [state, action, pending] = useActionState(signInAction, {});
+    };
 
     return (
-        <Card className="border-none shadow-none">
-            <CardHeader className="items-center gap-1">
-                <CardTitle className="text-2xl font-bold tracking-tight">
-                    Sign in to Sofon
-                </CardTitle>
-                <CardDescription>
-                    Monitor your services. Stay ahead of downtime.
-                </CardDescription>
-            </CardHeader>
+        <AuthCard
+            title="Sign in to Sofon"
+            description="Monitor your services. Stay ahead of downtime."
+            footer={{ text: "Don't have an account?", linkText: "Register", linkHref: "/register" }}
+        >
+            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
+                {apiError && (
+                    <p className="text-center text-sm text-destructive">{apiError}</p>
+                )}
 
-            <CardContent>
-                <form action={action} className="flex flex-col gap-5">
-                    {state.error && (
-                        <p className="text-center text-sm text-destructive">{state.error}</p>
-                    )}
+                <FormField
+                    label="Email"
+                    type="email"
+                    placeholder="Enter your email address..."
+                    error={errors.email}
+                    {...register("email", { required: "Email is required" })}
+                />
 
-                    <FormField
-                        label="Email"
-                        type="email"
-                        name="email"
-                        placeholder="Enter your email address..."
-                        required
-                    />
+                <FormField
+                    label="Password"
+                    isPassword
+                    placeholder="Enter your password..."
+                    error={errors.password}
+                    {...register("password", { required: "Password is required" })}
+                />
 
-                    <FormField
-                        label="Password"
-                        type="password"
-                        name="password"
-                        placeholder="Enter your password..."
-                        required
-                    />
-
-                    <SubmitButton pending={pending}>Sign In</SubmitButton>
-                </form>
-            </CardContent>
-
-            <CardFooter className="justify-center">
-                <p className="text-sm text-muted-foreground">
-                    Don&apos;t have an account?{" "}
-                    <Link
-                        href="/register"
-                        className="font-medium text-[#3B8CF0] hover:underline"
-                    >
-                        Register
-                    </Link>
-                </p>
-            </CardFooter>
-        </Card>
+                <SubmitButton pending={isSubmitting} loadingText="Signing in...">
+                    Sign In
+                </SubmitButton>
+            </form>
+        </AuthCard>
     );
 }

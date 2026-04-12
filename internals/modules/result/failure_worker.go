@@ -81,22 +81,38 @@ func (rp *ResultProcessor) handleFailure(r executor.HTTPResult) {
 
 	// Atomic alert decision
 	shouldAlert, err := rp.redisSvc.MarkIncidentAlertedIfNotSet(ctx, r.MonitorID)
-	if err != nil || !shouldAlert {
+	if err != nil {
+		rp.logger.Error().Err(err).Str("monitor_id", r.MonitorID.String()).Msg("failed to set alert decision in redis")
+		return
+	}
+	if !shouldAlert {
 		rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Monitor already alerted")
 		return
 	}
 
 	rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Now we alert Monitor")
 
+	incidentID, err := rp.incidentRepo.Create(ctx, time.Now(), r)
+	if err != nil {
+		rp.logger.Error().Err(err).Msg("failed to create incident in DB")
+		return
+	}
+
 	if err := rp.redisSvc.MarkDBIncidentCreated(ctx, r.MonitorID); err != nil {
 		rp.logger.Error().Err(err).Msg("failed to mark db_incident")
 	}
-
-	if err := rp.incidentRepo.Create(ctx, time.Now(), r); err != nil {
-		rp.logger.Error().Err(err).Msg("failed to create incident in DB")
-	}
 	rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Created incident in DB")
 
-	rp.alertChan <- alert.AlertEvent{MonitorID: r.MonitorID}
+	rp.alertChan <- alert.AlertEvent{
+		IncidentID: incidentID,
+		Type:       alert.AlertTypeDown,
+		MonitorID:  r.MonitorID,
+		MonitorURL: r.MonitorURL,
+		AlertEmail: r.AlertEmail,
+		Reason:     r.Reason,
+		StatusCode: r.Status,
+		LatencyMs:  r.LatencyMs,
+		CheckedAt:  r.CheckedAt,
+	}
 	rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Send Alert to alert channel")
 }

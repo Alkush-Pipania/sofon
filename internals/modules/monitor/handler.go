@@ -239,7 +239,7 @@ func (h *Handler) UpdateMonitorStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.service.UpdateMonitorStatus(ctx, userID, monitorID, req.Enable)
+	_, err = h.service.UpdateMonitorStatus(ctx, userID, monitorID, *req.Enable)
 	if err != nil {
 		h.logger.Error().
 			Str("op", op).

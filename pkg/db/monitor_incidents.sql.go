@@ -11,10 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const closeMonitorIncident = `-- name: CloseMonitorIncident :execrows
+const closeMonitorIncident = `-- name: CloseMonitorIncident :one
 UPDATE monitor_incidents
 SET end_time = $2
 WHERE monitor_id = $1 AND end_time IS NULL
+RETURNING id
 `
 
 type CloseMonitorIncidentParams struct {
@@ -22,17 +23,31 @@ type CloseMonitorIncidentParams struct {
 	EndTime   pgtype.Timestamptz
 }
 
-func (q *Queries) CloseMonitorIncident(ctx context.Context, arg CloseMonitorIncidentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, closeMonitorIncident, arg.MonitorID, arg.EndTime)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) CloseMonitorIncident(ctx context.Context, arg CloseMonitorIncidentParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, closeMonitorIncident, arg.MonitorID, arg.EndTime)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
-const createMonitorIncident = `-- name: CreateMonitorIncident :exec
+const countIncidentsByUserID = `-- name: CountIncidentsByUserID :one
+SELECT COUNT(*)::BIGINT
+FROM monitor_incidents mi
+JOIN monitors m ON m.id = mi.monitor_id
+WHERE m.user_id = $1
+`
+
+func (q *Queries) CountIncidentsByUserID(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countIncidentsByUserID, userID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const createMonitorIncident = `-- name: CreateMonitorIncident :one
 INSERT INTO monitor_incidents (monitor_id, start_time, alerted, http_status, latency_ms)
 VALUES ($1, $2, $3, $4, $5)
+RETURNING id
 `
 
 type CreateMonitorIncidentParams struct {
@@ -43,15 +58,89 @@ type CreateMonitorIncidentParams struct {
 	LatencyMs  int32
 }
 
-func (q *Queries) CreateMonitorIncident(ctx context.Context, arg CreateMonitorIncidentParams) error {
-	_, err := q.db.Exec(ctx, createMonitorIncident,
+func (q *Queries) CreateMonitorIncident(ctx context.Context, arg CreateMonitorIncidentParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createMonitorIncident,
 		arg.MonitorID,
 		arg.StartTime,
 		arg.Alerted,
 		arg.HttpStatus,
 		arg.LatencyMs,
 	)
-	return err
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getIncidentByIDAndUserID = `-- name: GetIncidentByIDAndUserID :one
+SELECT
+    mi.id,
+    mi.monitor_id,
+    m.url AS monitor_url,
+    mi.start_time,
+    mi.end_time,
+    mi.alerted,
+    mi.http_status,
+    mi.latency_ms,
+    mi.created_at,
+    (mi.end_time IS NULL)::BOOLEAN AS is_active,
+    EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
+    COALESCE(a.status, '') AS alert_status,
+    COALESCE(a.alert_email, '') AS alert_email,
+    a.sent_at AS alert_sent_at
+FROM monitor_incidents mi
+JOIN monitors m ON m.id = mi.monitor_id
+LEFT JOIN LATERAL (
+    SELECT status, alert_email, sent_at
+    FROM alerts
+    WHERE incident_id = mi.id
+    ORDER BY created_at DESC
+    LIMIT 1
+) a ON true
+WHERE mi.id = $1 AND m.user_id = $2
+`
+
+type GetIncidentByIDAndUserIDParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+type GetIncidentByIDAndUserIDRow struct {
+	ID          pgtype.UUID
+	MonitorID   pgtype.UUID
+	MonitorUrl  string
+	StartTime   pgtype.Timestamptz
+	EndTime     pgtype.Timestamptz
+	Alerted     bool
+	HttpStatus  int32
+	LatencyMs   int32
+	CreatedAt   pgtype.Timestamptz
+	IsActive    bool
+	DurationSec int64
+	AlertStatus string
+	AlertEmail  string
+	AlertSentAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetIncidentByIDAndUserID(ctx context.Context, arg GetIncidentByIDAndUserIDParams) (GetIncidentByIDAndUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getIncidentByIDAndUserID, arg.ID, arg.UserID)
+	var i GetIncidentByIDAndUserIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.MonitorID,
+		&i.MonitorUrl,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Alerted,
+		&i.HttpStatus,
+		&i.LatencyMs,
+		&i.CreatedAt,
+		&i.IsActive,
+		&i.DurationSec,
+		&i.AlertStatus,
+		&i.AlertEmail,
+		&i.AlertSentAt,
+	)
+	return i, err
 }
 
 const getMonitorIncidentByID = `-- name: GetMonitorIncidentByID :one
@@ -74,4 +163,210 @@ func (q *Queries) GetMonitorIncidentByID(ctx context.Context, id pgtype.UUID) (M
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listIncidentsByUserCursor = `-- name: ListIncidentsByUserCursor :many
+SELECT
+    mi.id,
+    mi.monitor_id,
+    m.url AS monitor_url,
+    mi.start_time,
+    mi.end_time,
+    mi.alerted,
+    mi.http_status,
+    mi.latency_ms,
+    mi.created_at,
+    (mi.end_time IS NULL)::BOOLEAN AS is_active,
+    EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
+    COALESCE(a.status, '') AS alert_status,
+    COALESCE(a.alert_email, '') AS alert_email,
+    a.sent_at AS alert_sent_at
+FROM monitor_incidents mi
+JOIN monitors m ON m.id = mi.monitor_id
+LEFT JOIN LATERAL (
+    SELECT status, alert_email, sent_at
+    FROM alerts
+    WHERE incident_id = mi.id
+    ORDER BY created_at DESC
+    LIMIT 1
+) a ON true
+WHERE m.user_id = $1
+  AND (
+    $2::text = 'all'
+        OR ($2::text = 'active' AND mi.end_time IS NULL)
+        OR ($2::text = 'resolved' AND mi.end_time IS NOT NULL)
+    )
+  AND ($3::timestamptz IS NULL OR mi.start_time >= $3::timestamptz)
+  AND ($4::timestamptz IS NULL OR mi.start_time <= $4::timestamptz)
+  AND ($5::text = '' OR m.url ILIKE ('%' || $5 || '%'))
+  AND ($6::uuid IS NULL OR mi.monitor_id = $6::uuid)
+  AND (
+    $7::timestamptz IS NULL
+        OR (mi.start_time, mi.id) < ($7::timestamptz, $8::uuid)
+    )
+ORDER BY mi.start_time DESC, mi.id DESC
+LIMIT $9
+`
+
+type ListIncidentsByUserCursorParams struct {
+	UserID  pgtype.UUID
+	Column2 string
+	Column3 pgtype.Timestamptz
+	Column4 pgtype.Timestamptz
+	Column5 string
+	Column6 pgtype.UUID
+	Column7 pgtype.Timestamptz
+	Column8 pgtype.UUID
+	Limit   int32
+}
+
+type ListIncidentsByUserCursorRow struct {
+	ID          pgtype.UUID
+	MonitorID   pgtype.UUID
+	MonitorUrl  string
+	StartTime   pgtype.Timestamptz
+	EndTime     pgtype.Timestamptz
+	Alerted     bool
+	HttpStatus  int32
+	LatencyMs   int32
+	CreatedAt   pgtype.Timestamptz
+	IsActive    bool
+	DurationSec int64
+	AlertStatus string
+	AlertEmail  string
+	AlertSentAt pgtype.Timestamptz
+}
+
+func (q *Queries) ListIncidentsByUserCursor(ctx context.Context, arg ListIncidentsByUserCursorParams) ([]ListIncidentsByUserCursorRow, error) {
+	rows, err := q.db.Query(ctx, listIncidentsByUserCursor,
+		arg.UserID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Column7,
+		arg.Column8,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIncidentsByUserCursorRow
+	for rows.Next() {
+		var i ListIncidentsByUserCursorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.MonitorUrl,
+			&i.StartTime,
+			&i.EndTime,
+			&i.Alerted,
+			&i.HttpStatus,
+			&i.LatencyMs,
+			&i.CreatedAt,
+			&i.IsActive,
+			&i.DurationSec,
+			&i.AlertStatus,
+			&i.AlertEmail,
+			&i.AlertSentAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIncidentsByUserID = `-- name: ListIncidentsByUserID :many
+SELECT
+    mi.id,
+    mi.monitor_id,
+    m.url AS monitor_url,
+    mi.start_time,
+    mi.end_time,
+    mi.alerted,
+    mi.http_status,
+    mi.latency_ms,
+    mi.created_at,
+    (mi.end_time IS NULL)::BOOLEAN AS is_active,
+    EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
+    COALESCE(a.status, '') AS alert_status,
+    COALESCE(a.alert_email, '') AS alert_email,
+    a.sent_at AS alert_sent_at
+FROM monitor_incidents mi
+JOIN monitors m ON m.id = mi.monitor_id
+LEFT JOIN LATERAL (
+    SELECT status, alert_email, sent_at
+    FROM alerts
+    WHERE incident_id = mi.id
+    ORDER BY created_at DESC
+    LIMIT 1
+) a ON true
+WHERE m.user_id = $1
+ORDER BY mi.start_time DESC
+LIMIT $2
+OFFSET $3
+`
+
+type ListIncidentsByUserIDParams struct {
+	UserID pgtype.UUID
+	Limit  int32
+	Offset int32
+}
+
+type ListIncidentsByUserIDRow struct {
+	ID          pgtype.UUID
+	MonitorID   pgtype.UUID
+	MonitorUrl  string
+	StartTime   pgtype.Timestamptz
+	EndTime     pgtype.Timestamptz
+	Alerted     bool
+	HttpStatus  int32
+	LatencyMs   int32
+	CreatedAt   pgtype.Timestamptz
+	IsActive    bool
+	DurationSec int64
+	AlertStatus string
+	AlertEmail  string
+	AlertSentAt pgtype.Timestamptz
+}
+
+func (q *Queries) ListIncidentsByUserID(ctx context.Context, arg ListIncidentsByUserIDParams) ([]ListIncidentsByUserIDRow, error) {
+	rows, err := q.db.Query(ctx, listIncidentsByUserID, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIncidentsByUserIDRow
+	for rows.Next() {
+		var i ListIncidentsByUserIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.MonitorUrl,
+			&i.StartTime,
+			&i.EndTime,
+			&i.Alerted,
+			&i.HttpStatus,
+			&i.LatencyMs,
+			&i.CreatedAt,
+			&i.IsActive,
+			&i.DurationSec,
+			&i.AlertStatus,
+			&i.AlertEmail,
+			&i.AlertSentAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

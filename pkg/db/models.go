@@ -24,8 +24,8 @@ type Monitor struct {
 	AlertEmail         pgtype.Text
 	IntervalSec        int32
 	TimeoutSec         int32
-	LatencyThresholdMs int32
-	ExpectedStatus     int32
+	LatencyThresholdMs pgtype.Int4
+	ExpectedStatus     pgtype.Int4
 	Enabled            bool
 	UpdatedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
@@ -47,6 +47,7 @@ type User struct {
 	Name          string
 	Email         string
 	PasswordHash  string
+	Role          string
 	MonitorsCount pgtype.Int4
 	CreatedAt     pgtype.Timestamptz
 }

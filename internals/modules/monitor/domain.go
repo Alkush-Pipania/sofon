@@ -11,8 +11,8 @@ type CreateMonitor struct {
 	Url                string
 	IntervalSec        int32
 	TimeoutSec         int32
-	LatencyThresholdMs int32
-	ExpectedStatus     int32
+	LatencyThresholdMs *int32
+	ExpectedStatus     *int32
 	AlertEmail         string
 }
 
@@ -23,8 +23,8 @@ type Monitor struct {
 	AlertEmail         string
 	IntervalSec        int32
 	TimeoutSec         int32
-	LatencyThresholdMs int32
-	ExpectedStatus     int32
+	LatencyThresholdMs *int32
+	ExpectedStatus     *int32
 	Enabled            bool
 }
 

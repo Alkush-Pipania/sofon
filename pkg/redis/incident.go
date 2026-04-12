@@ -79,7 +79,7 @@ func (c *Client) GetIncident(ctx context.Context, monitorID uuid.UUID) (map[stri
 	key := fmt.Sprintf("monitor:incident:%v", monitorID.String())
 
 	resp, err := c.rdb.HGetAll(ctx, key).Result()
-	if err == redis.Nil {
+	if err == redis.Nil || len(resp) == 0 {
 		return nil, nil
 	}
 	return resp, err
@@ -115,4 +115,14 @@ func (c *Client) MarkIncidentAlertedIfNotSet(ctx context.Context, monitorID uuid
 		return false, err
 	}
 	return res, nil // true means => first time
+}
+
+func (c *Client) MarkIncidentRecoveredAlertedIfNotSet(ctx context.Context, monitorID uuid.UUID) (bool, error) {
+	key := fmt.Sprintf("monitor:incident:%v", monitorID.String())
+
+	res, err := c.rdb.HSetNX(ctx, key, "recovered_alerted", "true").Result()
+	if err != nil {
+		return false, err
+	}
+	return res, nil // true means => first recovered alert for this incident
 }

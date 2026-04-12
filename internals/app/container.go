@@ -7,6 +7,7 @@ import (
 	middle "github.com/alkush-pipania/sofon/internals/middleware"
 	"github.com/alkush-pipania/sofon/internals/modules/alert"
 	"github.com/alkush-pipania/sofon/internals/modules/executor"
+	"github.com/alkush-pipania/sofon/internals/modules/incident"
 	"github.com/alkush-pipania/sofon/internals/modules/monitor"
 	"github.com/alkush-pipania/sofon/internals/modules/result"
 	"github.com/alkush-pipania/sofon/internals/modules/scheduler"
@@ -19,20 +20,21 @@ import (
 )
 
 type Container struct {
-	DB             *pgxpool.Pool
-	RedisClient    redis.Client
-	Logger         *zerolog.Logger
-	userSvc        *user.Service
-	userHandler    *user.Handler
-	monitorHandler *monitor.Handler
-	authMW         *middle.AuthMiddleware
-	Scheduler      *scheduler.Scheduler
-	Executor       *executor.Executor
-	ResultPro      *result.ResultProcessor
-	AlertSvc       *alert.AlertService
-	JobChan        chan scheduler.JobPayload
-	ResultChan     chan executor.HTTPResult
-	AlertChan      chan alert.AlertEvent
+	DB              *pgxpool.Pool
+	RedisClient     redis.Client
+	Logger          *zerolog.Logger
+	userSvc         *user.Service
+	userHandler     *user.Handler
+	incidentHandler *incident.Handler
+	monitorHandler  *monitor.Handler
+	authMW          *middle.AuthMiddleware
+	Scheduler       *scheduler.Scheduler
+	Executor        *executor.Executor
+	ResultPro       *result.ResultProcessor
+	AlertSvc        *alert.AlertService
+	JobChan         chan scheduler.JobPayload
+	ResultChan      chan executor.HTTPResult
+	AlertChan       chan alert.AlertEvent
 }
 
 func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logger, db *pgxpool.Pool) (*Container, error) {
@@ -48,36 +50,40 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 	alertChan := make(chan alert.AlertEvent, cfg.App.AlertChannelSize)      // specify channel size in config
 
 	monitorRepo := monitor.NewRepository(db, logger)
-	incidentRepo := result.NewMonitorIncidentRepo(db, logger)
+	monitorIncidentRepo := result.NewMonitorIncidentRepo(db, logger)
 	userRepo := user.NewRepository(db, logger)
 
 	userService := user.NewService(userRepo, tokenSvc)
 	monitorSvc := monitor.NewService(monitorRepo, redisClient, userService, logger)
+	incidentAPIRepo := incident.NewRepository(db, logger)
+	incidentSvc := incident.NewService(incidentAPIRepo)
 
 	sch := scheduler.NewScheduler(ctx, &cfg.Scheduler, jobChan, redisClient, logger)
 	exec := executor.NewExecutor(ctx, &cfg.Executor, jobChan, resultChan, monitorSvc, logger)
-	resultPro := result.NewResultProcessor(ctx, &cfg.ResultProcessor, redisClient, resultChan, incidentRepo, monitorSvc, alertChan, logger)
-	alertSvc := alert.NewAlertService(&cfg.Alert, alertChan, logger)
+	resultPro := result.NewResultProcessor(ctx, &cfg.ResultProcessor, redisClient, resultChan, monitorIncidentRepo, monitorSvc, alertChan, logger)
+	alertSvc := alert.NewAlertService(&cfg.Alert, db, alertChan, logger)
 
 	monitorHandler := monitor.NewHandler(monitorSvc, v, logger)
 	userHandler := user.NewHandler(userService, v, logger)
+	incidentHandler := incident.NewHandler(incidentSvc, logger)
 
 	authMW := middle.NewAuthMiddleware(tokenSvc)
 	return &Container{
-		RedisClient:    *redisClient,
-		Logger:         logger,
-		DB:             db,
-		userSvc:        userService,
-		userHandler:    userHandler,
-		authMW:         authMW,
-		monitorHandler: monitorHandler,
-		Scheduler:      sch,
-		Executor:       exec,
-		ResultPro:      resultPro,
-		AlertSvc:       alertSvc,
-		JobChan:        jobChan,
-		ResultChan:     resultChan,
-		AlertChan:      alertChan,
+		RedisClient:     *redisClient,
+		Logger:          logger,
+		DB:              db,
+		userSvc:         userService,
+		userHandler:     userHandler,
+		incidentHandler: incidentHandler,
+		authMW:          authMW,
+		monitorHandler:  monitorHandler,
+		Scheduler:       sch,
+		Executor:        exec,
+		ResultPro:       resultPro,
+		AlertSvc:        alertSvc,
+		JobChan:         jobChan,
+		ResultChan:      resultChan,
+		AlertChan:       alertChan,
 	}, nil
 
 }

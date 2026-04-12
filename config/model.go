@@ -39,9 +39,10 @@ type ExecutorConfig struct {
 }
 
 type AlertConfig struct {
-	WorkerCount int    `mapstructure:"worker_count" validate:"gte=5"`
-	OwnerEmail  string `mapstructure:"owner_email" validate:"required"` // TODO: check this
-	AccessKey   string `mapstructure:"access_key" validate:"required"`
+	WorkerCount      int    `mapstructure:"worker_count" validate:"gte=5"`
+	OwnerEmail       string `mapstructure:"owner_email" validate:"required,email"`
+	ResendAPIKey     string `mapstructure:"resend_api_key"`
+	ResendKillSwitch bool   `mapstructure:"kill_switch"`
 }
 
 type ResultProcessorConfig struct {

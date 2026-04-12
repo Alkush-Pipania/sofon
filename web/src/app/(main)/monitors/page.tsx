@@ -8,7 +8,17 @@ import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function MonitorsPage() {
-    const { monitors, limit, offset, loading, error, fetchMonitors, setOffset } =
+    const {
+        monitors,
+        limit,
+        offset,
+        loading,
+        error,
+        updatingMonitorId,
+        fetchMonitors,
+        setOffset,
+        updateMonitorStatus,
+    } =
         useMonitorStore();
 
     useEffect(() => {
@@ -67,6 +77,8 @@ export default function MonitorsPage() {
                     offset={offset}
                     totalCount={monitors.length}
                     onPageChange={setOffset}
+                    onToggleStatus={updateMonitorStatus}
+                    updatingMonitorId={updatingMonitorId}
                 />
             )}
         </div>

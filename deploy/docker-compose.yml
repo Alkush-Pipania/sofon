@@ -1,0 +1,109 @@
+name: sofon
+
+networks:
+  sofon-net:
+    name: sofon-net
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: sofon-postgres-data
+  redis_data:
+    name: sofon-redis-data
+
+services:
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: sofon-postgres
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sofon-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: sofon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - sofon-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Migrations (runs once) ───────────────────────────────────────────────────
+  migrate:
+    image: sofon-api:latest
+    container_name: sofon-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      [
+        "./goose",
+        "-dir",
+        "./migration",
+        "postgres",
+        "postgres://myuser:mypassword@postgres:5432/mydb?sslmode=disable",
+        "up"
+      ]
+    networks:
+      - sofon-net
+    restart: "no"
+
+  # ── API (Go backend) ─────────────────────────────────────────────────────────
+  api:
+    image: sofon-api:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: sofon-api
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - sofon-net
+    restart: unless-stopped
+
+  # ── Web (Next.js frontend) ───────────────────────────────────────────────────
+  web:
+    image: sofon-web:latest
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+      args:
+        # Override this in env for EC2/domain deployments.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    container_name: sofon-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - sofon-net
+    restart: unless-stopped

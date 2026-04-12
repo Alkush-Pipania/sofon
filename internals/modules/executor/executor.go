@@ -80,17 +80,17 @@ func (ew *Executor) startWork() {
 		if err != nil { // if err is monitor not found (may be deleted)or any other err , just log and return
 			// if err == not found -> simply return as monitor is deleted
 			if apperror.IsKind(err, apperror.NotFound) {
-				return
+				continue
 			}
 			// if err anything else -> it critical
 			// IT SHOULD BE RE-SCHEDULE
 			// log it
 			ew.monitorSvc.ScheduleMonitor(ew.ctx, job.MonitorID, 5, "executor.start_work")
 			ew.logger.Error().Err(err).Str("monitor_id", job.MonitorID.String()).Msg("error in loading monitor in executor")
-			return
+			continue
 		}
 		if !monitor.Enabled { // monitor is disabled, so dont proceed further
-			return // we not have to do this further
+			continue // we not have to do this further
 		}
 
 		ew.logger.Info().Msg("Monitor Loaded")
@@ -121,7 +121,12 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 
 	start := time.Now()
 
-	httpReqCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeout := time.Duration(monitor.TimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+
+	httpReqCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(httpReqCtx, "GET", monitor.Url, nil)
@@ -137,11 +142,14 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 			Msg("error in building request")
 
 		return HTTPResult{
-			MonitorID: monitor.ID,
-			Success:   false,
-			Reason:    "INVALID_REQUEST", // check with this in result processor
-			Retryable: false,
-			CheckedAt: time.Now(),
+			MonitorID:   monitor.ID,
+			MonitorURL:  monitor.Url,
+			Success:     false,
+			Reason:      "INVALID_REQUEST", // check with this in result processor
+			Retryable:   false,
+			CheckedAt:   time.Now(),
+			IntervalSec: monitor.IntervalSec,
+			AlertEmail:  monitor.AlertEmail,
 		}
 	}
 	resp, err := ew.httpClient.Do(req)
@@ -150,11 +158,16 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 		// this can be DNS err, network err, TLS err and context timeout(because of hanging request)
 		reason, isRetryable := ew.classifyError(err)
 		return HTTPResult{
-			MonitorID: monitor.ID,
-			Success:   false,
-			Reason:    reason,
-			Retryable: isRetryable,
-			CheckedAt: time.Now(),
+			MonitorID:   monitor.ID,
+			MonitorURL:  monitor.Url,
+			Success:     false,
+			Status:      http.StatusServiceUnavailable,
+			LatencyMs:   latency,
+			Reason:      reason,
+			Retryable:   isRetryable,
+			CheckedAt:   time.Now(),
+			IntervalSec: monitor.IntervalSec,
+			AlertEmail:  monitor.AlertEmail,
 		}
 	}
 
@@ -171,31 +184,34 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 
 	defer resp.Body.Close()
 
-	statusMatch, latencyMatch := false, false
+	statusMatch, latencyMatch := false, true
 
-	if monitor.ExpectedStatus == 0 {
+	if monitor.ExpectedStatus == nil {
 		// DEFAULT BEHAVIOR: Treat any 2xx (Success) or 3xx (Redirect) as healthy
 		statusMatch = resp.StatusCode >= 200 && resp.StatusCode < 400
 	} else {
 		// STRICT BEHAVIOR: User provided a specific code, so it MUST match
-		statusMatch = resp.StatusCode == int(monitor.ExpectedStatus)
+		statusMatch = resp.StatusCode == int(*monitor.ExpectedStatus)
 	}
 
-	if monitor.LatencyThresholdMs > 0 {
+	if monitor.LatencyThresholdMs != nil {
 		// STRICT BEHAVIOR: User provided a threshold, so it MUST be faster than this
-		latencyMatch = latency <= int64(monitor.LatencyThresholdMs)
+		latencyMatch = latency <= int64(*monitor.LatencyThresholdMs)
 	}
 
 	success := statusMatch && latencyMatch
 
 	return HTTPResult{
-		MonitorID: monitor.ID,
-		Status:    resp.StatusCode,
-		LatencyMs: latency,
-		Success:   success,
-		Reason:    "",
-		Retryable: false,
-		CheckedAt: time.Now(),
+		MonitorID:   monitor.ID,
+		MonitorURL:  monitor.Url,
+		Status:      resp.StatusCode,
+		LatencyMs:   latency,
+		Success:     success,
+		Reason:      "",
+		Retryable:   false,
+		CheckedAt:   time.Now(),
+		IntervalSec: monitor.IntervalSec,
+		AlertEmail:  monitor.AlertEmail,
 	}
 }
 

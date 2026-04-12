@@ -1,0 +1,61 @@
+# Sofon Configuration – Docker
+# Uses container service names instead of localhost
+
+env: "development"
+service_name: "monitor-service"
+port: "8080"
+
+# Authentication
+auth:
+  secret: "my_secret"        # CHANGE IN PRODUCTION
+  token_ttl: "30m"
+
+# Application channel sizes
+app:
+  job_channel_size: 500
+  result_channel_size: 500
+  alert_channel_size: 500
+
+# Scheduler
+scheduler:
+  interval: "30s"
+  batch_size: 100
+
+# Executor
+executor:
+  worker_count: 20
+  http_semaphore_count: 100
+
+# Alerting
+alert:
+  worker_count: 10
+  owner_email: "admin@example.com"
+  resend_api_key: ""          # set when kill_switch is false
+  kill_switch: true           # true => disable all outgoing alert emails
+
+# Result Processor
+result_processor:
+  success_worker_count: 10
+  success_channel_size: 500
+  failure_worker_count: 10
+  failure_channel_size: 500
+
+# Redis – points to the redis service in docker-compose
+redis:
+  url: "redis://redis:6379"
+  dial_timeout: "5s"
+  read_timeout: "3s"
+  write_timeout: "3s"
+  pool_size: 50
+  min_idle_conns: 10
+  conn_max_lifetime: "30m"
+  conn_max_idle_time: "10m"
+
+# Database – points to the postgres service in docker-compose
+db:
+  url: "postgresql://myuser:mypassword@postgres:5432/mydb?sslmode=disable"
+  max_open_conns: 25
+  min_idle_conns: 5
+  conn_max_lifetime: "30m"
+  conn_max_idle_time: "10m"
+  health_timeout: "5s"

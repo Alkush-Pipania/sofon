@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 
+	"github.com/alkush-pipania/sofon/internals/modules/incident"
 	"github.com/alkush-pipania/sofon/internals/modules/monitor"
 	"github.com/alkush-pipania/sofon/internals/modules/user"
 	"github.com/go-chi/chi/v5"
@@ -18,7 +19,7 @@ func NewRouter(container *Container) http.Handler {
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Turnstile-Token"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
@@ -33,6 +34,7 @@ func NewRouter(container *Container) http.Handler {
 		v1.Mount("/users", user.Routes(container.userHandler, container.authMW))
 
 		v1.With(container.authMW.Handle).Mount("/monitors", monitor.Routes(container.monitorHandler))
+		v1.With(container.authMW.Handle).Mount("/incidents", incident.Routes(container.incidentHandler))
 	})
 
 	return r
