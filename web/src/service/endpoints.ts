@@ -14,7 +14,7 @@ export const ENDPOINTS = {
 
     // ── Users ─────────────────────────────────────────
     USERS: {
-        ME: "/api/v1/users/me",
+        ME: "/api/v1/users/get-profile",
     },
 
     // ── Monitors ──────────────────────────────────────

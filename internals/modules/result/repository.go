@@ -27,10 +27,10 @@ func NewMonitorIncidentRepo(dbExecutor db.DBTX, logger *zerolog.Logger) *Monitor
 	}
 }
 
-func (r *MonitorIncidentRepository) Create(ctx context.Context, startTime time.Time, e executor.HTTPResult) error {
+func (r *MonitorIncidentRepository) Create(ctx context.Context, startTime time.Time, e executor.HTTPResult) (uuid.UUID, error) {
 	const op string = "repo.monitor_incident.create"
 
-	err := r.querier.CreateMonitorIncident(ctx, db.CreateMonitorIncidentParams{
+	incidentID, err := r.querier.CreateMonitorIncident(ctx, db.CreateMonitorIncidentParams{
 		MonitorID:  utils.ToPgUUID(e.MonitorID),
 		Alerted:    true,
 		HttpStatus: int32(e.Status),
@@ -41,10 +41,10 @@ func (r *MonitorIncidentRepository) Create(ctx context.Context, startTime time.T
 		},
 	})
 	if err == nil {
-		return nil
+		return utils.FromPgUUID(incidentID), nil
 	}
 
-	return utils.WrapRepoError(op, err, r.logger)
+	return uuid.UUID{}, utils.WrapRepoError(op, err, r.logger)
 }
 
 func (r *MonitorIncidentRepository) GetByID(ctx context.Context, incidentID uuid.UUID) (MonitorIncident, error) {
@@ -75,16 +75,20 @@ func (r *MonitorIncidentRepository) GetByID(ctx context.Context, incidentID uuid
 	return MonitorIncident{}, utils.WrapRepoError(op, err, r.logger)
 }
 
-func (r *MonitorIncidentRepository) CloseIncident(ctx context.Context, monitorID uuid.UUID, endTime time.Time) error {
+func (r *MonitorIncidentRepository) CloseIncident(ctx context.Context, monitorID uuid.UUID, endTime time.Time) (uuid.UUID, bool, error) {
 	const op string = "repo.monitor_incident.close_incident"
 
-	_, err := r.querier.CloseMonitorIncident(ctx, db.CloseMonitorIncidentParams{
+	closedIncidentID, err := r.querier.CloseMonitorIncident(ctx, db.CloseMonitorIncidentParams{
 		MonitorID: utils.ToPgUUID(monitorID),
 		EndTime:   utils.ToPgTimestamptz(endTime),
 	})
 	if err == nil {
-		return nil
+		return utils.FromPgUUID(closedIncidentID), true, nil
 	}
 
-	return utils.WrapRepoError(op, err, r.logger)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, nil
+	}
+
+	return uuid.Nil, false, utils.WrapRepoError(op, err, r.logger)
 }

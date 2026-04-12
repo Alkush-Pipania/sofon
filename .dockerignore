@@ -1,0 +1,7 @@
+.git/
+.gitignore
+web/
+deploy/
+installer/
+*.md
+*.env

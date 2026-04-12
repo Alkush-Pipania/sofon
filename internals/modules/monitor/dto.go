@@ -32,5 +32,5 @@ type GetAllMonitorsResponse struct {
 }
 
 type UpdateMonitorStatusRequest struct {
-	Enable bool `json:"enable" validate:"required"`
+	Enable *bool `json:"enable" validate:"required"`
 }

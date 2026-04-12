@@ -8,6 +8,7 @@ import (
 
 type HTTPResult struct {
 	MonitorID   uuid.UUID
+	MonitorURL  string
 	Success     bool
 	Status      int
 	LatencyMs   int64

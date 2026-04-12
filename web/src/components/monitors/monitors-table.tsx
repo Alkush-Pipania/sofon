@@ -10,6 +10,8 @@ import {
     ChevronRight,
     ExternalLink,
     ShieldCheck,
+    Power,
+    Loader2,
 } from "lucide-react";
 
 import {
@@ -23,6 +25,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type Monitor } from "@/store/monitor-store";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
 // ── Types ──────────────────────────────────────────────────────────────
 export type { Monitor };
@@ -34,6 +44,8 @@ interface MonitorsTableProps {
     offset: number;
     totalCount?: number;
     onPageChange?: (newOffset: number) => void;
+    onToggleStatus?: (monitorID: string, enable: boolean) => Promise<void>;
+    updatingMonitorId?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -59,7 +71,12 @@ export function MonitorsTable({
     offset,
     totalCount,
     onPageChange,
+    onToggleStatus,
+    updatingMonitorId,
 }: MonitorsTableProps) {
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [selectedMonitor, setSelectedMonitor] = useState<Monitor | null>(null);
+
     const currentPage = Math.floor(offset / limit) + 1;
     const total = totalCount ?? monitors.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -78,13 +95,14 @@ export function MonitorsTable({
                             <TableHead className="text-center">Status</TableHead>
                             <TableHead className="text-center">Interval</TableHead>
                             <TableHead className="text-center">Expected</TableHead>
+                            <TableHead className="text-center">Action</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {monitors.length === 0 ? (
                             <TableRow>
                                 <TableCell
-                                    colSpan={4}
+                                    colSpan={5}
                                     className="h-32 text-center text-muted-foreground"
                                 >
                                     No monitors yet. Add one to get started.
@@ -151,6 +169,27 @@ export function MonitorsTable({
                                             <span className="text-sm">{m.expected_status}</span>
                                         </div>
                                     </TableCell>
+
+                                    {/* Action */}
+                                    <TableCell className="text-center">
+                                        <Button
+                                            variant={m.enabled ? "destructive" : "outline"}
+                                            size="sm"
+                                            className="h-8 gap-1.5"
+                                            disabled={updatingMonitorId === m.id}
+                                            onClick={() => {
+                                                setSelectedMonitor(m);
+                                                setConfirmOpen(true);
+                                            }}
+                                        >
+                                            {updatingMonitorId === m.id ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                                <Power className="h-3.5 w-3.5" />
+                                            )}
+                                            {m.enabled ? "Disable" : "Enable"}
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))
                         )}
@@ -201,6 +240,48 @@ export function MonitorsTable({
                     </Button>
                 </div>
             </div>
+
+            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {selectedMonitor?.enabled ? "Disable monitor?" : "Enable monitor?"}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {selectedMonitor?.enabled
+                                ? "This will stop future checks and alerting for this monitor until you enable it again."
+                                : "This will resume scheduled checks and alerting for this monitor."}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant={selectedMonitor?.enabled ? "destructive" : "default"}
+                            disabled={
+                                !selectedMonitor ||
+                                updatingMonitorId === selectedMonitor.id
+                            }
+                            onClick={async () => {
+                                if (!selectedMonitor || !onToggleStatus) return;
+                                try {
+                                    await onToggleStatus(selectedMonitor.id, !selectedMonitor.enabled);
+                                    setConfirmOpen(false);
+                                    setSelectedMonitor(null);
+                                } catch {
+                                    // Error state is already handled in the store/page.
+                                }
+                            }}
+                        >
+                            {updatingMonitorId === selectedMonitor?.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : null}
+                            Confirm
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

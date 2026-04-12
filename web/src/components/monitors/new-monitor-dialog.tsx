@@ -142,20 +142,21 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
                             className="flex items-center gap-1.5 text-sm font-medium"
                         >
                             <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                            Alert Email
+                            Alert Email (Optional)
                         </Label>
                         <Input
                             id="mon-email"
                             type="email"
-                            placeholder="you@company.com"
-                            required
+                            placeholder="you@company.com (optional)"
                             value={form.alert_email}
                             onChange={(e) =>
                                 update("alert_email", e.target.value)
                             }
                         />
                         <p className="text-xs text-muted-foreground">
-                            We&apos;ll notify you here when your site goes down.
+                            Leave this empty to use the default alert email
+                            from server config. Set it only if this monitor
+                            should notify a different email.
                         </p>
                     </div>
 
@@ -172,7 +173,7 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
                             <Input
                                 id="mon-interval"
                                 type="number"
-                                min={10}
+                                min={60}
                                 required
                                 value={form.interval_sec}
                                 onChange={(e) =>
@@ -217,7 +218,7 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
                                     <Input
                                         id="mon-timeout"
                                         type="number"
-                                        min={1}
+                                        min={120}
                                         value={form.timeout_sec}
                                         onChange={(e) =>
                                             update(

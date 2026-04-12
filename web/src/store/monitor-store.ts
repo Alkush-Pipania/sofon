@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { get, post } from "@/service/api";
+import { get, post, patch as patchReq } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
 
 // ── Types ───────────────────────────────────────────
@@ -50,10 +50,12 @@ interface MonitorState {
     offset: number;
     loading: boolean;
     creating: boolean;
+    updatingMonitorId: string | null;
     error: string | null;
 
     fetchMonitors: (offset?: number, limit?: number) => Promise<void>;
     createMonitor: (data: CreateMonitorRequest) => Promise<void>;
+    updateMonitorStatus: (monitorID: string, enable: boolean) => Promise<void>;
     setOffset: (offset: number) => void;
 }
 
@@ -64,6 +66,7 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
     offset: 0,
     loading: false,
     creating: false,
+    updatingMonitorId: null,
     error: null,
 
     fetchMonitors: async (offset?: number, limit?: number) => {
@@ -105,6 +108,29 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
                 err instanceof Error ? err.message : "Failed to create monitor";
             set({ creating: false, error: message });
             throw err; // re-throw so the dialog can show the error
+        }
+    },
+
+    updateMonitorStatus: async (monitorID: string, enable: boolean) => {
+        set({ updatingMonitorId: monitorID, error: null });
+
+        try {
+            await patchReq<{ success: boolean; message: string; data: string }>(
+                ENDPOINTS.MONITORS.UPDATE(monitorID),
+                { enable },
+            );
+
+            set((state) => ({
+                monitors: state.monitors.map((m) =>
+                    m.id === monitorID ? { ...m, enabled: enable } : m,
+                ),
+                updatingMonitorId: null,
+            }));
+        } catch (err: unknown) {
+            const message =
+                err instanceof Error ? err.message : "Failed to update monitor status";
+            set({ updatingMonitorId: null, error: message });
+            throw err;
         }
     },
 

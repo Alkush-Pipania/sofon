@@ -89,19 +89,10 @@ func (s *Service) GetMonitor(ctx context.Context, userID uuid.UUID, monitorID uu
 }
 
 func (s *Service) LoadMonitor(ctx context.Context, monitorID uuid.UUID) (Monitor, error) {
-	// first check the redis cache
-	// if found -> then return it
-	// if not found
-	// get from DB
-	// store in cache
-	// return it
-
+	// IMPORTANT:
+	// Executor path should be strongly consistent for enable/disable state.
+	// Read from DB first so a stale cache entry cannot keep a disabled monitor running.
 	const op string = "service.monitor.load_monitor"
-
-	m, exists := s.cache.GetMonitor(ctx, monitorID)
-	if exists {
-		return m, nil
-	}
 
 	mDB, err := s.monitorRepo.GetByID(ctx, monitorID)
 	if err != nil {

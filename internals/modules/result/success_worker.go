@@ -3,7 +3,9 @@ package result
 import (
 	"time"
 
+	"github.com/alkush-pipania/sofon/internals/modules/alert"
 	"github.com/alkush-pipania/sofon/internals/modules/executor"
+	"github.com/google/uuid"
 )
 
 func (rp *ResultProcessor) successWorker() {
@@ -49,12 +51,53 @@ func (rp *ResultProcessor) handleSuccess(r executor.HTTPResult) {
 
 	// Close DB incident IF it was ever created
 	dbIncident := incident["db_incident"] == "true"
+	var closedIncidentID = uuid.Nil
 
 	if dbIncident {
-		if err := rp.incidentRepo.CloseIncident(ctx, r.MonitorID, time.Now()); err != nil {
+		incidentID, closed, err := rp.incidentRepo.CloseIncident(ctx, r.MonitorID, time.Now())
+		if err != nil {
 			rp.logger.Error().
 				Err(err).
 				Msg("failed to close incident in DB, keeping redis incident")
+			return
+		}
+		if !closed {
+			rp.logger.Warn().
+				Str("monitor_id", r.MonitorID.String()).
+				Msg("recovery detected but no open DB incident found")
+		} else {
+			closedIncidentID = incidentID
+		}
+	}
+
+	if dbIncident && closedIncidentID != uuid.Nil {
+		shouldSendRecovered, err := rp.redisSvc.MarkIncidentRecoveredAlertedIfNotSet(ctx, r.MonitorID)
+		if err != nil {
+			rp.logger.Error().
+				Err(err).
+				Str("monitor_id", r.MonitorID.String()).
+				Msg("failed to mark recovered alert decision")
+		} else if shouldSendRecovered {
+			rp.alertChan <- alert.AlertEvent{
+				IncidentID: closedIncidentID,
+				Type:       alert.AlertTypeRecovered,
+				MonitorID:  r.MonitorID,
+				MonitorURL: r.MonitorURL,
+				AlertEmail: r.AlertEmail,
+				Reason:     "RECOVERED",
+				StatusCode: r.Status,
+				LatencyMs:  r.LatencyMs,
+				CheckedAt:  r.CheckedAt,
+			}
+			rp.logger.Info().
+				Str("monitor_id", r.MonitorID.String()).
+				Str("incident_id", closedIncidentID.String()).
+				Msg("recovery alert sent to alert channel")
+		} else {
+			rp.logger.Info().
+				Str("monitor_id", r.MonitorID.String()).
+				Str("incident_id", closedIncidentID.String()).
+				Msg("recovery alert already sent for this incident")
 		}
 	}
 

@@ -47,6 +47,7 @@ type User struct {
 	Name          string
 	Email         string
 	PasswordHash  string
+	Role          string
 	MonitorsCount pgtype.Int4
 	CreatedAt     pgtype.Timestamptz
 }
