@@ -28,6 +28,11 @@ func NewRouter(container *Container) http.Handler {
 	}))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		if err := container.DB.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("db unavailable"))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
