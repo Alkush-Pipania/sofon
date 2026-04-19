@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { SignInForm } from "./signin-form";
+import { serverApiBase } from "@/lib/server-api";
 
 async function getRegistrationsEnabled(): Promise<boolean> {
     try {
         const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/v1/users/setup-status`,
+            `${serverApiBase()}/api/v1/users/setup-status`,
             { cache: "no-store" },
         );
         const json = await res.json();

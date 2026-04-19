@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { InviteForm } from "./invite-form";
+import { serverApiBase } from "@/lib/server-api";
 
 interface InviteData {
     email: string;
@@ -11,7 +12,7 @@ interface InviteData {
 async function getInvite(token: string): Promise<InviteData | null> {
     try {
         const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/v1/team/invitations/${token}`,
+            `${serverApiBase()}/api/v1/team/invitations/${token}`,
             { cache: "no-store" },
         );
         if (!res.ok) return null;

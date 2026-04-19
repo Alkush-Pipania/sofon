@@ -1,25 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
+import { serverApiBase } from "@/lib/server-api";
 
-// Read at server startup — never baked at build time.
-const API_BASE = process.env.API_INTERNAL_URL ?? "http://localhost:8080";
+// Hop-by-hop and transport-encoding headers must not be forwarded:
+// Node's fetch auto-decodes gzip but keeps content-encoding/length, so the
+// browser would try to gunzip plaintext and fail.
+const HOP_BY_HOP = new Set([
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+]);
 
 async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
-    const url = `${API_BASE}/api/${path.join("/")}${req.nextUrl.search}`;
+    const url = `${serverApiBase()}/api/${path.join("/")}${req.nextUrl.search}`;
 
     const headers = new Headers(req.headers);
-    headers.delete("host"); // don't forward the browser's Host header
+    headers.delete("host");
 
     const init: RequestInit & { duplex?: string } = { method: req.method, headers };
     if (req.method !== "GET" && req.method !== "HEAD") {
         init.body = req.body;
-        init.duplex = "half"; // required for streaming request bodies
+        init.duplex = "half";
     }
 
-    const upstream = await fetch(url, init);
+    let upstream: Response;
+    try {
+        upstream = await fetch(url, init);
+    } catch (err) {
+        console.error("[proxy] upstream fetch failed:", url, err);
+        return NextResponse.json(
+            { success: false, message: "Upstream API unreachable" },
+            { status: 502 },
+        );
+    }
+
+    const respHeaders = new Headers(upstream.headers);
+    for (const h of HOP_BY_HOP) respHeaders.delete(h);
 
     return new NextResponse(upstream.body, {
         status: upstream.status,
-        headers: upstream.headers,
+        headers: respHeaders,
     });
 }
 
