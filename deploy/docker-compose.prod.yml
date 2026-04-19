@@ -113,6 +113,8 @@ services:
   web:
     image: ${SOFON_WEB_IMAGE:?SOFON_WEB_IMAGE is required}
     container_name: sofon-web
+    environment:
+      API_INTERNAL_URL: "http://api:8080"
     depends_on:
       api:
         condition: service_healthy
