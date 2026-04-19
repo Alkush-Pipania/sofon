@@ -19,6 +19,19 @@ if [[ "${EUID}" -ne 0 ]]; then
   exec sudo -E bash "$0" "$@"
 fi
 
+# When invoked via `curl | bash` stdin is the pipe, not the terminal.
+# Reassign stdin to /dev/tty so all `read` prompts work interactively.
+if [[ -t 0 ]]; then
+  : # already a terminal, nothing to do
+elif [[ -e /dev/tty ]]; then
+  exec < /dev/tty
+else
+  printf "  Cannot open a terminal for interactive prompts.\n" >&2
+  printf "  Save the installer first and run it directly:\n" >&2
+  printf "    curl -fsSL <url>/install.sh -o install.sh && sudo bash install.sh\n" >&2
+  exit 1
+fi
+
 # ── Prompt helpers ────────────────────────────────────────────────────────────
 prompt_default() {
   local question="$1" default_val="$2" answer
@@ -131,11 +144,11 @@ else
   SOFON_HTTPS_PORT="$(prompt_default "HTTPS port" "443")"
 
   # Auto-detect public IP for a sensible default
-  printf "  ${DIM}  Detecting public IP...${RESET}"
+  printf "  ${DIM}  Detecting public IP...${RESET}\n"
   _detected_ip="$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
     || curl -sf --max-time 5 https://api.ipify.org 2>/dev/null \
     || echo "")"
-  printf "\r%-60s\r" " "
+  printf "\033[1A\033[2K"  # move up one line and erase it
 
   if [[ -n "${_detected_ip}" && "${SOFON_HTTP_PORT}" == "80" ]]; then
     _default_url="http://${_detected_ip}"
