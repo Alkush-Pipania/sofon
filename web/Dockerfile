@@ -19,9 +19,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN mkdir -p /app/public
 
-# NEXT_PUBLIC_* vars are baked in at build time.
-# Pass the URL the browser will use to reach the API.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8080
+# NEXT_PUBLIC_API_URL is intentionally empty in production images.
+# The browser uses relative URLs (/api/*) which Next.js rewrites to
+# the internal API container at runtime — no host baked in.
+# Override with --build-arg for local dev only.
+ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
