@@ -19,39 +19,34 @@ if [[ "${EUID}" -ne 0 ]]; then
   exec sudo -E bash "$0" "$@"
 fi
 
-# When invoked via `curl | bash` stdin is the pipe, not the terminal.
-# Reassign stdin to /dev/tty so all `read` prompts work interactively.
-if [[ -t 0 ]]; then
-  : # already a terminal, nothing to do
-elif [[ -e /dev/tty ]]; then
-  exec < /dev/tty
-else
-  printf "  Cannot open a terminal for interactive prompts.\n" >&2
-  printf "  Save the installer first and run it directly:\n" >&2
-  printf "    curl -fsSL <url>/install.sh -o install.sh && sudo bash install.sh\n" >&2
+# Verify /dev/tty is accessible — required for interactive prompts
+if [[ ! -e /dev/tty ]]; then
+  printf "  /dev/tty not available. Cannot run interactive prompts.\n" >&2
   exit 1
 fi
 
 # ── Prompt helpers ────────────────────────────────────────────────────────────
 prompt_default() {
   local question="$1" default_val="$2" answer
-  printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "${question}" "${default_val}"
-  read -r answer
+  # Print prompt to /dev/tty so it shows even inside $() subshells
+  printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "${question}" "${default_val}" >/dev/tty
+  read -r answer </dev/tty
   printf '%s' "${answer:-${default_val}}"
 }
 
 prompt_secret() {
   local question="$1" answer
-  printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET}: " "${question}"
-  read -r -s answer; printf "\n"
+  printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET}: " "${question}" >/dev/tty
+  read -r -s answer </dev/tty
+  printf "\n" >/dev/tty
   printf '%s' "${answer}"
 }
 
 prompt_yn() {   # returns 0 for yes, 1 for no
   local question="$1" default="${2:-n}" answer
   local hint; [[ "${default}" == "y" ]] && hint="Y/n" || hint="y/N"
-  printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "${question}" "${hint}"
-  read -r answer
+  printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "${question}" "${hint}" >/dev/tty
+  read -r answer </dev/tty
   answer="${answer:-${default}}"
   [[ "${answer}" =~ ^[Yy]$ ]]
 }
