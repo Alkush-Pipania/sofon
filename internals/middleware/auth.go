@@ -17,19 +17,27 @@ import (
 	"github.com/alkush-pipania/sofon/internals/security"
 	"github.com/alkush-pipania/sofon/pkg/apperror"
 	"github.com/alkush-pipania/sofon/pkg/utils"
+	"github.com/google/uuid"
 )
 
 type userCtxKeyType struct{}
 
 var userCtxKey = userCtxKeyType{}
 
-type AuthMiddleware struct {
-	tokenSvc *security.TokenService
+// ActiveChecker is implemented by the user service to verify a user is still active.
+type ActiveChecker interface {
+	IsUserActive(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
-func NewAuthMiddleware(tokenSvc *security.TokenService) *AuthMiddleware {
+type AuthMiddleware struct {
+	tokenSvc     *security.TokenService
+	activeChecker ActiveChecker
+}
+
+func NewAuthMiddleware(tokenSvc *security.TokenService, activeChecker ActiveChecker) *AuthMiddleware {
 	return &AuthMiddleware{
-		tokenSvc: tokenSvc,
+		tokenSvc:     tokenSvc,
+		activeChecker: activeChecker,
 	}
 }
 
@@ -48,9 +56,20 @@ func (a *AuthMiddleware) Handle(next http.Handler) http.Handler {
 			return
 		}
 
-		// Extra safety checks (optional but recommended)
 		if claims.UserID == "" || claims.Email == "" {
-			utils.WriteError(w, http.StatusUnauthorized, "", apperror.Unauthorised, "user is unauhorised")
+			utils.WriteError(w, http.StatusUnauthorized, "", apperror.Unauthorised, "user is unauthorised")
+			return
+		}
+
+		// Check the user is still active (catches mid-session deactivations)
+		userID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			utils.WriteError(w, http.StatusUnauthorized, "", apperror.Unauthorised, "user is unauthorised")
+			return
+		}
+		active, err := a.activeChecker.IsUserActive(r.Context(), userID)
+		if err != nil || !active {
+			utils.WriteError(w, http.StatusUnauthorized, "", apperror.Unauthorised, "your account has been deactivated")
 			return
 		}
 

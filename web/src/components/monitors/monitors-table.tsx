@@ -11,7 +11,9 @@ import {
     ExternalLink,
     ShieldCheck,
     Power,
+    Trash2,
     Loader2,
+    MoreHorizontal,
 } from "lucide-react";
 
 import {
@@ -24,6 +26,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type Monitor } from "@/store/monitor-store";
 import {
     Dialog,
@@ -34,9 +43,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 
-// ── Types ──────────────────────────────────────────────────────────────
 export type { Monitor };
-
 
 interface MonitorsTableProps {
     monitors: Monitor[];
@@ -45,10 +52,10 @@ interface MonitorsTableProps {
     totalCount?: number;
     onPageChange?: (newOffset: number) => void;
     onToggleStatus?: (monitorID: string, enable: boolean) => Promise<void>;
+    onDelete?: (monitorID: string) => Promise<void>;
     updatingMonitorId?: string | null;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
 function formatUrl(raw: string) {
     try {
         const u = new URL(raw);
@@ -64,7 +71,6 @@ function formatInterval(sec: number) {
     return `${sec}s`;
 }
 
-// ── Component ──────────────────────────────────────────────────────────
 export function MonitorsTable({
     monitors,
     limit,
@@ -72,9 +78,11 @@ export function MonitorsTable({
     totalCount,
     onPageChange,
     onToggleStatus,
+    onDelete,
     updatingMonitorId,
 }: MonitorsTableProps) {
-    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [toggleConfirmOpen, setToggleConfirmOpen] = useState(false);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | null>(null);
 
     const currentPage = Math.floor(offset / limit) + 1;
@@ -86,7 +94,6 @@ export function MonitorsTable({
 
     return (
         <div className="space-y-4">
-            {/* Table */}
             <div className="rounded-xl border bg-card">
                 <Table>
                     <TableHeader>
@@ -95,7 +102,7 @@ export function MonitorsTable({
                             <TableHead className="text-center">Status</TableHead>
                             <TableHead className="text-center">Interval</TableHead>
                             <TableHead className="text-center">Expected</TableHead>
-                            <TableHead className="text-center">Action</TableHead>
+                            <TableHead className="w-12" />
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -117,34 +124,35 @@ export function MonitorsTable({
                                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
                                                 <Globe className="h-4 w-4 text-muted-foreground" />
                                             </div>
-                                            <div className="flex flex-col">
-                                                <a
-                                                    href={m.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-1 font-medium hover:underline"
-                                                >
-                                                    {formatUrl(m.url)}
-                                                    <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                                                </a>
-                                            </div>
+                                            <a
+                                                href={m.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 font-medium hover:underline"
+                                            >
+                                                {formatUrl(m.url)}
+                                                <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                                            </a>
                                         </div>
                                     </TableCell>
 
-                                    {/* Enabled / Disabled */}
+                                    {/* Status */}
                                     <TableCell className="text-center">
                                         {m.enabled ? (
                                             <Badge
                                                 variant="outline"
-                                                className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                                className="gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                             >
-                                                <CircleCheck className="h-3 w-3" />
+                                                <span className="relative flex h-2 w-2">
+                                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                                </span>
                                                 Active
                                             </Badge>
                                         ) : (
                                             <Badge
                                                 variant="outline"
-                                                className="gap-1 border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+                                                className="gap-1.5 border-zinc-500/30 bg-zinc-500/10 text-zinc-500 dark:text-zinc-400"
                                             >
                                                 <CircleX className="h-3 w-3" />
                                                 Paused
@@ -170,25 +178,45 @@ export function MonitorsTable({
                                         </div>
                                     </TableCell>
 
-                                    {/* Action */}
-                                    <TableCell className="text-center">
-                                        <Button
-                                            variant={m.enabled ? "destructive" : "outline"}
-                                            size="sm"
-                                            className="h-8 gap-1.5"
-                                            disabled={updatingMonitorId === m.id}
-                                            onClick={() => {
-                                                setSelectedMonitor(m);
-                                                setConfirmOpen(true);
-                                            }}
-                                        >
-                                            {updatingMonitorId === m.id ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            ) : (
-                                                <Power className="h-3.5 w-3.5" />
-                                            )}
-                                            {m.enabled ? "Disable" : "Enable"}
-                                        </Button>
+                                    {/* 3-dot menu */}
+                                    <TableCell className="pr-4">
+                                        {updatingMonitorId === m.id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                        ) : (
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-8 w-8 p-0 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
+                                                    >
+                                                        <MoreHorizontal className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-40">
+                                                    <DropdownMenuItem
+                                                        onClick={() => {
+                                                            setSelectedMonitor(m);
+                                                            setToggleConfirmOpen(true);
+                                                        }}
+                                                    >
+                                                        <Power className="mr-2 h-3.5 w-3.5" />
+                                                        {m.enabled ? "Disable" : "Enable"}
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        className="text-destructive focus:text-destructive"
+                                                        onClick={() => {
+                                                            setSelectedMonitor(m);
+                                                            setDeleteConfirmOpen(true);
+                                                        }}
+                                                    >
+                                                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                                        Delete
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -241,7 +269,8 @@ export function MonitorsTable({
                 </div>
             </div>
 
-            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            {/* Toggle confirm dialog */}
+            <Dialog open={toggleConfirmOpen} onOpenChange={setToggleConfirmOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>
@@ -254,30 +283,66 @@ export function MonitorsTable({
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                        <Button variant="outline" onClick={() => setToggleConfirmOpen(false)}>
                             Cancel
                         </Button>
                         <Button
                             variant={selectedMonitor?.enabled ? "destructive" : "default"}
-                            disabled={
-                                !selectedMonitor ||
-                                updatingMonitorId === selectedMonitor.id
-                            }
+                            disabled={!selectedMonitor || updatingMonitorId === selectedMonitor.id}
                             onClick={async () => {
                                 if (!selectedMonitor || !onToggleStatus) return;
                                 try {
                                     await onToggleStatus(selectedMonitor.id, !selectedMonitor.enabled);
-                                    setConfirmOpen(false);
+                                    setToggleConfirmOpen(false);
                                     setSelectedMonitor(null);
                                 } catch {
-                                    // Error state is already handled in the store/page.
+                                    // handled in store
                                 }
                             }}
                         >
-                            {updatingMonitorId === selectedMonitor?.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : null}
+                            {updatingMonitorId === selectedMonitor?.id && (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            )}
                             Confirm
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete confirm dialog */}
+            <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Delete monitor?</DialogTitle>
+                        <DialogDescription>
+                            <span className="font-medium text-foreground">
+                                {selectedMonitor ? formatUrl(selectedMonitor.url) : ""}
+                            </span>{" "}
+                            will be permanently deleted along with all its history. This cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            disabled={!selectedMonitor || updatingMonitorId === selectedMonitor.id}
+                            onClick={async () => {
+                                if (!selectedMonitor || !onDelete) return;
+                                try {
+                                    await onDelete(selectedMonitor.id);
+                                    setDeleteConfirmOpen(false);
+                                    setSelectedMonitor(null);
+                                } catch {
+                                    // handled in store
+                                }
+                            }}
+                        >
+                            {updatingMonitorId === selectedMonitor?.id && (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            )}
+                            Delete
                         </Button>
                     </DialogFooter>
                 </DialogContent>

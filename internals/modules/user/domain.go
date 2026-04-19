@@ -7,6 +7,8 @@ type User struct {
 	Name          string
 	Email         string
 	PasswordHash  string
+	Role          string
+	IsActive      bool
 	MonitorsCount int32
 	IsPaidUser    bool
 }
@@ -15,6 +17,7 @@ type CreateUserCmd struct {
 	Name         string
 	Email        string
 	PasswordHash string
+	Role         string
 }
 
 type LogInUserCmd struct {

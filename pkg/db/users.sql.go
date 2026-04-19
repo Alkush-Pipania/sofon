@@ -12,8 +12,8 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (name, email, password_hash)
-VALUES ($1, $2, $3)
+INSERT INTO users (name, email, password_hash, role)
+VALUES ($1, $2, $3, $4)
     RETURNING id
 `
 
@@ -21,17 +21,45 @@ type CreateUserParams struct {
 	Name         string
 	Email        string
 	PasswordHash string
+	Role         string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Name, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Name,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Role,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
+const decrementMonitorCount = `-- name: DecrementMonitorCount :exec
+UPDATE users
+SET monitors_count = GREATEST(monitors_count - 1, 0)
+WHERE id = $1
+`
+
+func (q *Queries) DecrementMonitorCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, decrementMonitorCount, id)
+	return err
+}
+
+const getUserActiveStatus = `-- name: GetUserActiveStatus :one
+SELECT is_active FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserActiveStatus(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserActiveStatus, id)
+	var is_active bool
+	err := row.Scan(&is_active)
+	return is_active, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, password_hash
+SELECT id, name, email, password_hash, role, is_active
 FROM users
 WHERE email = $1
 `
@@ -41,6 +69,8 @@ type GetUserByEmailRow struct {
 	Name         string
 	Email        string
 	PasswordHash string
+	Role         string
+	IsActive     bool
 }
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
@@ -51,6 +81,8 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.Name,
 		&i.Email,
 		&i.PasswordHash,
+		&i.Role,
+		&i.IsActive,
 	)
 	return i, err
 }
@@ -82,6 +114,28 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 	return i, err
 }
 
+const getUserPasswordHash = `-- name: GetUserPasswordHash :one
+SELECT password_hash FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserPasswordHash(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserPasswordHash, id)
+	var password_hash string
+	err := row.Scan(&password_hash)
+	return password_hash, err
+}
+
+const hasUsers = `-- name: HasUsers :one
+SELECT EXISTS(SELECT 1 FROM users) AS has_users
+`
+
+func (q *Queries) HasUsers(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUsers)
+	var has_users bool
+	err := row.Scan(&has_users)
+	return has_users, err
+}
+
 const incrementMonitorCount = `-- name: IncrementMonitorCount :execrows
 UPDATE users
 SET monitors_count = monitors_count + 1
@@ -94,4 +148,88 @@ func (q *Queries) IncrementMonitorCount(ctx context.Context, id pgtype.UUID) (in
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, name, email, role, is_active, created_at
+FROM users
+ORDER BY created_at ASC
+`
+
+type ListUsersRow struct {
+	ID        pgtype.UUID
+	Name      string
+	Email     string
+	Role      string
+	IsActive  bool
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
+	rows, err := q.db.Query(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersRow
+	for rows.Next() {
+		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.Role,
+			&i.IsActive,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setUserActive = `-- name: SetUserActive :exec
+UPDATE users SET is_active = $1 WHERE id = $2
+`
+
+type SetUserActiveParams struct {
+	IsActive bool
+	ID       pgtype.UUID
+}
+
+func (q *Queries) SetUserActive(ctx context.Context, arg SetUserActiveParams) error {
+	_, err := q.db.Exec(ctx, setUserActive, arg.IsActive, arg.ID)
+	return err
+}
+
+const updateUserName = `-- name: UpdateUserName :exec
+UPDATE users SET name = $1 WHERE id = $2
+`
+
+type UpdateUserNameParams struct {
+	Name string
+	ID   pgtype.UUID
+}
+
+func (q *Queries) UpdateUserName(ctx context.Context, arg UpdateUserNameParams) error {
+	_, err := q.db.Exec(ctx, updateUserName, arg.Name, arg.ID)
+	return err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = $1 WHERE id = $2
+`
+
+type UpdateUserPasswordParams struct {
+	PasswordHash string
+	ID           pgtype.UUID
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	return err
 }

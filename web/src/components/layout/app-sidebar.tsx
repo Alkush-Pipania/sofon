@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, AlertTriangle, LogOut } from "lucide-react";
+import { Activity, AlertTriangle, Users, UserCircle, LogOut } from "lucide-react";
 import { tokenStore } from "@/service/api";
 
 import {
@@ -28,6 +28,16 @@ const navItems = [
         title: "Incidents",
         href: "/incidents",
         icon: AlertTriangle,
+    },
+    {
+        title: "Team",
+        href: "/team",
+        icon: Users,
+    },
+    {
+        title: "Profile",
+        href: "/profile",
+        icon: UserCircle,
     },
 ];
 

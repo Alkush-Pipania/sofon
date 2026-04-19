@@ -32,6 +32,7 @@ func (r *repository) CreateUser(ctx context.Context, user CreateUserCmd) (uuid.U
 		Name:         user.Name,
 		Email:        user.Email,
 		PasswordHash: user.PasswordHash,
+		Role:         user.Role,
 	})
 	if err == nil {
 		return utils.FromPgUUID(id), nil
@@ -155,6 +156,8 @@ func (r *repository) GetUserByEmail(ctx context.Context, email string) (User, er
 			Name:         user.Name,
 			Email:        user.Email,
 			PasswordHash: user.PasswordHash,
+			Role:         user.Role,
+			IsActive:     user.IsActive,
 		}, nil
 	}
 
@@ -220,4 +223,101 @@ func (r *repository) IncrementMonitorCount(ctx context.Context, userID uuid.UUID
 	}
 
 	return utils.WrapRepoError(op, err, r.logger)
+}
+
+func (r *repository) DecrementMonitorCount(ctx context.Context, userID uuid.UUID) error {
+	const op string = "repo.user.decrement_monitor_count"
+
+	err := r.querier.DecrementMonitorCount(ctx, utils.ToPgUUID(userID))
+	if err == nil {
+		return nil
+	}
+
+	return utils.WrapRepoError(op, err, r.logger)
+}
+
+func (r *repository) IsUserActive(ctx context.Context, userID uuid.UUID) (bool, error) {
+	const op = "repo.user.is_user_active"
+
+	active, err := r.querier.GetUserActiveStatus(ctx, utils.ToPgUUID(userID))
+	if err != nil {
+		return false, utils.WrapRepoError(op, err, r.logger)
+	}
+	return active, nil
+}
+
+func (r *repository) SetUserActive(ctx context.Context, userID uuid.UUID, active bool) error {
+	const op = "repo.user.set_user_active"
+
+	err := r.querier.SetUserActive(ctx, db.SetUserActiveParams{
+		IsActive: active,
+		ID:       utils.ToPgUUID(userID),
+	})
+	if err != nil {
+		return utils.WrapRepoError(op, err, r.logger)
+	}
+	return nil
+}
+
+func (r *repository) HasUsers(ctx context.Context) (bool, error) {
+	const op string = "repo.user.has_users"
+
+	has, err := r.querier.HasUsers(ctx)
+	if err != nil {
+		return false, utils.WrapRepoError(op, err, r.logger)
+	}
+	return has, nil
+}
+
+func (r *repository) GetRegistrationsEnabled(ctx context.Context) (bool, error) {
+	const op string = "repo.instance_settings.get_registrations_enabled"
+
+	enabled, err := r.querier.GetRegistrationsEnabled(ctx)
+	if err != nil {
+		return false, utils.WrapRepoError(op, err, r.logger)
+	}
+	return enabled, nil
+}
+
+func (r *repository) UpdateUserName(ctx context.Context, userID uuid.UUID, name string) error {
+	const op = "repo.user.update_user_name"
+	err := r.querier.UpdateUserName(ctx, db.UpdateUserNameParams{
+		Name: name,
+		ID:   utils.ToPgUUID(userID),
+	})
+	if err != nil {
+		return utils.WrapRepoError(op, err, r.logger)
+	}
+	return nil
+}
+
+func (r *repository) GetUserPasswordHash(ctx context.Context, userID uuid.UUID) (string, error) {
+	const op = "repo.user.get_user_password_hash"
+	hash, err := r.querier.GetUserPasswordHash(ctx, utils.ToPgUUID(userID))
+	if err != nil {
+		return "", utils.WrapRepoError(op, err, r.logger)
+	}
+	return hash, nil
+}
+
+func (r *repository) UpdateUserPassword(ctx context.Context, userID uuid.UUID, hash string) error {
+	const op = "repo.user.update_user_password"
+	err := r.querier.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+		PasswordHash: hash,
+		ID:           utils.ToPgUUID(userID),
+	})
+	if err != nil {
+		return utils.WrapRepoError(op, err, r.logger)
+	}
+	return nil
+}
+
+func (r *repository) SetRegistrationsEnabled(ctx context.Context, enabled bool) error {
+	const op string = "repo.instance_settings.set_registrations_enabled"
+
+	err := r.querier.SetRegistrationsEnabled(ctx, enabled)
+	if err != nil {
+		return utils.WrapRepoError(op, err, r.logger)
+	}
+	return nil
 }

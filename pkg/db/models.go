@@ -17,6 +17,22 @@ type Alert struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
+type InstanceSetting struct {
+	ID                   int32
+	RegistrationsEnabled bool
+}
+
+type Invitation struct {
+	ID         pgtype.UUID
+	Email      string
+	Role       string
+	Token      string
+	ExpiresAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	InvitedBy  pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+}
+
 type Monitor struct {
 	ID                 pgtype.UUID
 	UserID             pgtype.UUID
@@ -42,6 +58,12 @@ type MonitorIncident struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
+type Team struct {
+	ID        int32
+	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
 type User struct {
 	ID            pgtype.UUID
 	Name          string
@@ -50,4 +72,5 @@ type User struct {
 	Role          string
 	MonitorsCount pgtype.Int4
 	CreatedAt     pgtype.Timestamptz
+	IsActive      bool
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/alkush-pipania/sofon/internals/modules/incident"
 	"github.com/alkush-pipania/sofon/internals/modules/monitor"
+	"github.com/alkush-pipania/sofon/internals/modules/team"
 	"github.com/alkush-pipania/sofon/internals/modules/user"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -35,6 +36,7 @@ func NewRouter(container *Container) http.Handler {
 
 		v1.With(container.authMW.Handle).Mount("/monitors", monitor.Routes(container.monitorHandler))
 		v1.With(container.authMW.Handle).Mount("/incidents", incident.Routes(container.incidentHandler))
+		v1.Mount("/team", team.Routes(container.teamHandler, container.authMW))
 	})
 
 	return r

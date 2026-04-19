@@ -10,6 +10,7 @@ import (
 
 type UserService interface {
 	IncrementMonitorCount(ctx context.Context, userID uuid.UUID) error
+	DecrementMonitorCount(ctx context.Context, userID uuid.UUID) error
 }
 
 type Service struct {
@@ -179,6 +180,28 @@ func (s *Service) ScheduleMonitor(ctx context.Context, mID uuid.UUID, intervalSe
 		// workers schedule them in background
 		// so that the state remain consistent
 	}
+}
+
+func (s *Service) DeleteMonitor(ctx context.Context, userID, monitorID uuid.UUID) error {
+	const op = "service.monitor.delete_monitor"
+
+	m, err := s.monitorRepo.Get(ctx, userID, monitorID)
+	if err != nil {
+		return err
+	}
+
+	// clear all Redis state before DB delete
+	s.disableMonitor(ctx, monitorID)
+
+	if err := s.monitorRepo.Delete(ctx, userID, monitorID); err != nil {
+		return err
+	}
+
+	if err := s.userSvc.DecrementMonitorCount(ctx, m.UserID); err != nil {
+		s.logger.Error().Str("op", op).Err(err).Msg("failed to decrement monitor count after delete")
+	}
+
+	return nil
 }
 
 func (s *Service) disableMonitor(ctx context.Context, monitorID uuid.UUID) {

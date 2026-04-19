@@ -23,9 +23,10 @@ type AuthConfig struct {
 }
 
 type AppConfig struct {
-	JobChannelSize    int `mapstructure:"job_channel_size" validate:"gte=100,lte=5000"`
-	ResultChannelSize int `mapstructure:"result_channel_size" validate:"gte=100,lte=5000"`
-	AlertChannelSize  int `mapstructure:"alert_channel_size" validate:"gte=100,lte=5000"`
+	JobChannelSize    int    `mapstructure:"job_channel_size" validate:"gte=100,lte=5000"`
+	ResultChannelSize int    `mapstructure:"result_channel_size" validate:"gte=100,lte=5000"`
+	AlertChannelSize  int    `mapstructure:"alert_channel_size" validate:"gte=100,lte=5000"`
+	AppURL            string `mapstructure:"app_url"`
 }
 
 type SchedulerConfig struct {
@@ -50,6 +51,8 @@ type ResultProcessorConfig struct {
 	SuccessChannelSize int `mapstructure:"success_channel_size" validate:"gte=5"`
 	FailureWorkerCount int `mapstructure:"failure_worker_count" validate:"gte=5"`
 	FailureChannelSize int `mapstructure:"failure_channel_size" validate:"gte=5"`
+	FailureThreshold   int `mapstructure:"failure_threshold" validate:"gte=1"`
+	RetryLimit         int `mapstructure:"retry_limit" validate:"gte=1"`
 }
 
 type RedisConfig struct {

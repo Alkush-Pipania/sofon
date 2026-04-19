@@ -26,6 +26,8 @@ type ResultProcessor struct {
 	// processor config
 	successWorkerCount int
 	failureWorkerCount int
+	failureThreshold   int
+	retryLimit         int
 
 	// services
 	redisSvc     *redis.Client
@@ -59,10 +61,12 @@ func NewResultProcessor(
 		incidentRepo:       incidentRepo,
 		monitorSvc:         monitorSvc,
 		alertChan:          alertChan,
-		successChan:        make(chan executor.HTTPResult, resProcessorConfig.SuccessChannelSize), // number should be passed as parameter
-		failureChan:        make(chan executor.HTTPResult, resProcessorConfig.FailureChannelSize), // number should be passed as parameter
+		successChan:        make(chan executor.HTTPResult, resProcessorConfig.SuccessChannelSize),
+		failureChan:        make(chan executor.HTTPResult, resProcessorConfig.FailureChannelSize),
 		successWorkerCount: resProcessorConfig.SuccessWorkerCount,
 		failureWorkerCount: resProcessorConfig.FailureWorkerCount,
+		failureThreshold:   resProcessorConfig.FailureThreshold,
+		retryLimit:         resProcessorConfig.RetryLimit,
 		logger:             logger,
 	}
 }

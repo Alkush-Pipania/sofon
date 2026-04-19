@@ -50,6 +50,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("app.job_channel_size", 500)
 	v.SetDefault("app.result_channel_size", 500)
 	v.SetDefault("app.alert_channel_size", 500)
+	v.SetDefault("app.app_url", "http://localhost:3000")
 
 	// Scheduler
 	v.SetDefault("scheduler.interval", "30s")
@@ -70,6 +71,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("result_processor.success_channel_size", 500)
 	v.SetDefault("result_processor.failure_worker_count", 10)
 	v.SetDefault("result_processor.failure_channel_size", 500)
+	v.SetDefault("result_processor.failure_threshold", 3)
+	v.SetDefault("result_processor.retry_limit", 2)
 
 	// Redis
 	v.SetDefault("redis.url", "redis://localhost:6379")

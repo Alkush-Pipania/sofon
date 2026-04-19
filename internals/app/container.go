@@ -11,6 +11,7 @@ import (
 	"github.com/alkush-pipania/sofon/internals/modules/monitor"
 	"github.com/alkush-pipania/sofon/internals/modules/result"
 	"github.com/alkush-pipania/sofon/internals/modules/scheduler"
+	"github.com/alkush-pipania/sofon/internals/modules/team"
 	"github.com/alkush-pipania/sofon/internals/modules/user"
 	"github.com/alkush-pipania/sofon/internals/security"
 	"github.com/alkush-pipania/sofon/pkg/redis"
@@ -27,6 +28,7 @@ type Container struct {
 	userHandler     *user.Handler
 	incidentHandler *incident.Handler
 	monitorHandler  *monitor.Handler
+	teamHandler     *team.Handler
 	authMW          *middle.AuthMiddleware
 	Scheduler       *scheduler.Scheduler
 	Executor        *executor.Executor
@@ -63,11 +65,15 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 	resultPro := result.NewResultProcessor(ctx, &cfg.ResultProcessor, redisClient, resultChan, monitorIncidentRepo, monitorSvc, alertChan, logger)
 	alertSvc := alert.NewAlertService(&cfg.Alert, db, alertChan, logger)
 
+	teamRepo := team.NewRepository(db, logger)
+	teamSvc := team.NewService(teamRepo, cfg.App.AppURL)
+
 	monitorHandler := monitor.NewHandler(monitorSvc, v, logger)
 	userHandler := user.NewHandler(userService, v, logger)
 	incidentHandler := incident.NewHandler(incidentSvc, logger)
+	teamHandler := team.NewHandler(teamSvc, v, logger)
 
-	authMW := middle.NewAuthMiddleware(tokenSvc)
+	authMW := middle.NewAuthMiddleware(tokenSvc, userService)
 	return &Container{
 		RedisClient:     *redisClient,
 		Logger:          logger,
@@ -77,6 +83,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 		incidentHandler: incidentHandler,
 		authMW:          authMW,
 		monitorHandler:  monitorHandler,
+		teamHandler:     teamHandler,
 		Scheduler:       sch,
 		Executor:        exec,
 		ResultPro:       resultPro,

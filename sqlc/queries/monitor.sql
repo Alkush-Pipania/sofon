@@ -40,3 +40,7 @@ OFFSET $3;
 UPDATE monitors
 SET enabled = $2
 WHERE id = $1 AND user_id = $3;
+
+-- name: DeleteMonitor :execrows
+DELETE FROM monitors
+WHERE id = $1 AND user_id = $2;

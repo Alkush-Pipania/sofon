@@ -57,6 +57,24 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (p
 	return id, err
 }
 
+const deleteMonitor = `-- name: DeleteMonitor :execrows
+DELETE FROM monitors
+WHERE id = $1 AND user_id = $2
+`
+
+type DeleteMonitorParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMonitor, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAllMonitorByUserID = `-- name: GetAllMonitorByUserID :many
 SELECT id, user_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled, updated_at, created_at
 FROM monitors

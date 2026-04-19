@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { get, post, patch as patchReq } from "@/service/api";
+import { get, post, patch as patchReq, del } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
 
 // ── Types ───────────────────────────────────────────
@@ -56,6 +56,7 @@ interface MonitorState {
     fetchMonitors: (offset?: number, limit?: number) => Promise<void>;
     createMonitor: (data: CreateMonitorRequest) => Promise<void>;
     updateMonitorStatus: (monitorID: string, enable: boolean) => Promise<void>;
+    deleteMonitor: (monitorID: string) => Promise<void>;
     setOffset: (offset: number) => void;
 }
 
@@ -129,6 +130,27 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
         } catch (err: unknown) {
             const message =
                 err instanceof Error ? err.message : "Failed to update monitor status";
+            set({ updatingMonitorId: null, error: message });
+            throw err;
+        }
+    },
+
+    deleteMonitor: async (monitorID: string) => {
+        set({ updatingMonitorId: monitorID, error: null });
+
+        try {
+            await del<{ success: boolean; message: string }>(
+                ENDPOINTS.MONITORS.DELETE(monitorID),
+            );
+
+            set((state) => ({
+                monitors: state.monitors.filter((m) => m.id !== monitorID),
+                totalCount: state.totalCount - 1,
+                updatingMonitorId: null,
+            }));
+        } catch (err: unknown) {
+            const message =
+                err instanceof Error ? err.message : "Failed to delete monitor";
             set({ updatingMonitorId: null, error: message });
             throw err;
         }

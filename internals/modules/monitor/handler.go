@@ -199,6 +199,42 @@ func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, reqID, "monitors retrived", resp)
 }
 
+func (h *Handler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
+	const op string = "handler.monitor.delete_monitor"
+	ctx := r.Context()
+	reqID := middleware.GetReqID(ctx)
+
+	reqClaims, ok := middle.UserFromContext(ctx)
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		return
+	}
+	userID, err := uuid.Parse(reqClaims.UserID)
+	if err != nil {
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		return
+	}
+
+	mIDStr := chi.URLParam(r, "monitorID")
+	monitorID, err := uuid.Parse(mIDStr)
+	if err != nil {
+		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
+		return
+	}
+
+	if err := h.service.DeleteMonitor(ctx, userID, monitorID); err != nil {
+		h.logger.Error().
+			Str("op", op).
+			Str("req_id", reqID).
+			Err(err).
+			Msg("delete monitor error")
+		utils.FromAppError(w, reqID, err)
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, reqID, "monitor deleted successfully", "")
+}
+
 // Patch : /monitors/{monitorID}
 //
 //	{

@@ -23,7 +23,7 @@ services:
       - "${SOFON_HTTP_PORT:-80}:80"
       - "${SOFON_HTTPS_PORT:-443}:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -87,7 +87,7 @@ services:
       - sofon-internal
     restart: "no"
     volumes:
-      - ./config/config.yaml:/app/config.yaml:ro
+      - ../config/config.yaml:/app/config.yaml:ro
 
   api:
     image: ${SOFON_API_IMAGE:?SOFON_API_IMAGE is required}
@@ -108,7 +108,7 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - ./config/config.yaml:/app/config.yaml:ro
+      - ../config/config.yaml:/app/config.yaml:ro
 
   web:
     image: ${SOFON_WEB_IMAGE:?SOFON_WEB_IMAGE is required}

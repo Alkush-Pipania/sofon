@@ -9,6 +9,7 @@ func Routes(h *Handler) chi.Router {
 	r.Get("/", h.GetAllMonitors)
 	r.Get("/{monitorID}", h.GetMonitor)
 	r.Patch("/{monitorID}", h.UpdateMonitorStatus)
+	r.Delete("/{monitorID}", h.DeleteMonitor)
 
 	return r
 }

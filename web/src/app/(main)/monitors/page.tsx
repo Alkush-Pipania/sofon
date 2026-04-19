@@ -18,8 +18,8 @@ export default function MonitorsPage() {
         fetchMonitors,
         setOffset,
         updateMonitorStatus,
-    } =
-        useMonitorStore();
+        deleteMonitor,
+    } = useMonitorStore();
 
     useEffect(() => {
         fetchMonitors();
@@ -78,6 +78,7 @@ export default function MonitorsPage() {
                     totalCount={monitors.length}
                     onPageChange={setOffset}
                     onToggleStatus={updateMonitorStatus}
+                    onDelete={deleteMonitor}
                     updatingMonitorId={updatingMonitorId}
                 />
             )}

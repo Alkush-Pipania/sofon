@@ -27,3 +27,17 @@ type LogInResponse struct {
 	UserID      string `json:"user_id"`
 	AccessToken string `json:"access_token"`
 }
+
+type SetupStatusResponse struct {
+	RegistrationsEnabled bool `json:"registrations_enabled"`
+}
+
+type UpdateProfileRequest struct {
+	Name string `json:"name" validate:"required,min=2,max=100"`
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required"`
+	NewPassword     string `json:"new_password" validate:"required,min=8,max=72"`
+	ConfirmPassword string `json:"confirm_password" validate:"required"`
+}

@@ -98,6 +98,96 @@ func (h *Handler) LogIn(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, reqID, "user registered", result)
 }
 
+func (h *Handler) SetupStatus(w http.ResponseWriter, r *http.Request) {
+	const op string = "handler.user.setup_status"
+	ctx := r.Context()
+	reqID := middleware.GetReqID(ctx)
+
+	enabled, err := h.service.SetupStatus(ctx)
+	if err != nil {
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("setup status error")
+		utils.FromAppError(w, reqID, err)
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, reqID, "setup status", SetupStatusResponse{RegistrationsEnabled: enabled})
+}
+
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	const op string = "handler.user.update_profile"
+	ctx := r.Context()
+	reqID := middleware.GetReqID(ctx)
+
+	reqClaims, ok := middle.UserFromContext(ctx)
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "unauthorised")
+		return
+	}
+	userID, err := uuid.Parse(reqClaims.UserID)
+	if err != nil {
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "unauthorised")
+		return
+	}
+
+	var req UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request body")
+		return
+	}
+	if err := h.validator.Struct(req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateProfile(ctx, userID, req.Name); err != nil {
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Send()
+		utils.FromAppError(w, reqID, err)
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, reqID, "profile updated", struct{}{})
+}
+
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	const op string = "handler.user.change_password"
+	ctx := r.Context()
+	reqID := middleware.GetReqID(ctx)
+
+	reqClaims, ok := middle.UserFromContext(ctx)
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "unauthorised")
+		return
+	}
+	userID, err := uuid.Parse(reqClaims.UserID)
+	if err != nil {
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "unauthorised")
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request body")
+		return
+	}
+	if err := h.validator.Struct(req); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request body")
+		return
+	}
+
+	if req.NewPassword != req.ConfirmPassword {
+		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "new passwords do not match")
+		return
+	}
+
+	if err := h.service.ChangePassword(ctx, userID, req.CurrentPassword, req.NewPassword); err != nil {
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Send()
+		utils.FromAppError(w, reqID, err)
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, reqID, "password changed", struct{}{})
+}
+
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	const op string = "handler.user.get_profile"
 	ctx := r.Context()

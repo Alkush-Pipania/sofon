@@ -49,7 +49,7 @@ func (rp *ResultProcessor) handleFailure(r executor.HTTPResult) {
 			return
 		}
 
-		if retryCount <= 2 { // specify this in config
+		if retryCount <= int64(rp.retryLimit) {
 			reschedule = false
 			rp.monitorSvc.ScheduleMonitor(ctx, r.MonitorID, 5, "result.failure_worker")
 			// this method handles everything and reliable
@@ -72,7 +72,7 @@ func (rp *ResultProcessor) handleFailure(r executor.HTTPResult) {
 	}
 	rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Created a incident in redis")
 
-	if failCount < 3 { // specify this in config
+	if failCount < int64(rp.failureThreshold) {
 		rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Int64("fail_count", failCount).Msg("Fail count is less than threshold")
 		return
 	}

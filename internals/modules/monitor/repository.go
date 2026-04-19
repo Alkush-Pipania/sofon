@@ -253,6 +253,50 @@ func (r *Repository) GetAll(ctx context.Context, userID uuid.UUID, limit int32, 
 
 }
 
+func (r *Repository) Delete(ctx context.Context, userID, monitorID uuid.UUID) error {
+	const op string = "repo.monitor.delete"
+
+	rows, err := r.querier.DeleteMonitor(ctx, db.DeleteMonitorParams{
+		ID:     utils.ToPgUUID(monitorID),
+		UserID: utils.ToPgUUID(userID),
+	})
+	if err == nil {
+		if rows == 0 {
+			return &apperror.Error{
+				Kind:    apperror.NotFound,
+				Op:      op,
+				Message: "monitor not found",
+			}
+		}
+		return nil
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return &apperror.Error{
+			Kind:    apperror.RequestTimeout,
+			Op:      op,
+			Message: "request cancelled or timed out",
+		}
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return &apperror.Error{
+			Kind:    apperror.DatabaseErr,
+			Op:      op,
+			Message: "internal server error",
+			Err:     err,
+		}
+	}
+
+	return &apperror.Error{
+		Kind:    apperror.Internal,
+		Op:      op,
+		Message: "internal server error",
+		Err:     err,
+	}
+}
+
 func (r *Repository) SetEnabled(ctx context.Context, userID, monitorID uuid.UUID, enabled bool) error {
 	const op string = "repo.monitor.enable_disable_monitor"
 
