@@ -165,6 +165,7 @@ run_step "Fetching files from GitHub" bash -c "
   _dl installer/setup.sh
   _dl installer/deploy.sh
   _dl installer/doctor.sh
+  _dl installer/update.sh
   _dl deploy/docker-compose.prod.yml
   _dl deploy/config.production.yaml.tmpl
   _dl deploy/Caddyfile.domain.tmpl
