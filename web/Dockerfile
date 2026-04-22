@@ -19,12 +19,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN mkdir -p /app/public
 
-# NEXT_PUBLIC_API_URL is intentionally empty in production images.
-# The browser uses relative URLs (/api/*) which Next.js rewrites to
-# the internal API container at runtime — no host baked in.
-# Override with --build-arg for local dev only.
-ARG NEXT_PUBLIC_API_URL=
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# NEXT_PUBLIC_API_URL must NOT be set in production: the browser uses relative
+# URLs (/api/*) which the runtime route proxy forwards to API_INTERNAL_URL.
+# Leaving it unset means Next.js bakes `undefined` → env.ts ?? fallback is "".
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
