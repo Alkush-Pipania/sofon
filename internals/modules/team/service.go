@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	middle "github.com/alkush-pipania/sofon/internals/middleware"
 	"github.com/alkush-pipania/sofon/internals/security"
 	"github.com/alkush-pipania/sofon/pkg/apperror"
 	"github.com/google/uuid"
@@ -25,19 +26,39 @@ func NewService(repo *repository, appURL string) *Service {
 	}
 }
 
-func (s *Service) GetTeam(ctx context.Context) (Team, error) {
-	return s.repo.GetTeam(ctx)
+func (s *Service) CreateTeam(ctx context.Context, cmd CreateTeamCmd) (Team, error) {
+	team, err := s.repo.CreateTeam(ctx, cmd.Name)
+	if err != nil {
+		return Team{}, err
+	}
+	// Creator becomes the team owner
+	if err := s.repo.AddMember(ctx, team.ID, cmd.CreatorUserID, RoleOwner); err != nil {
+		return Team{}, err
+	}
+	return team, nil
 }
 
-func (s *Service) UpdateTeamName(ctx context.Context, name string) error {
-	return s.repo.UpdateTeamName(ctx, name)
+func (s *Service) ListUserTeams(ctx context.Context, userID uuid.UUID) ([]Team, error) {
+	return s.repo.ListTeamsByUserID(ctx, userID)
 }
 
-func (s *Service) ListMembers(ctx context.Context) ([]Member, error) {
-	return s.repo.ListMembers(ctx)
+func (s *Service) GetTeam(ctx context.Context, teamID uuid.UUID) (Team, error) {
+	return s.repo.GetTeamByID(ctx, teamID)
 }
 
-func (s *Service) SetMemberActive(ctx context.Context, targetID, callerID uuid.UUID, active bool) error {
+func (s *Service) UpdateTeamName(ctx context.Context, teamID uuid.UUID, name string) error {
+	return s.repo.UpdateTeamName(ctx, teamID, name)
+}
+
+func (s *Service) GetMembership(ctx context.Context, userID, teamID uuid.UUID) (middle.TeamMemberCtx, error) {
+	return s.repo.GetMembership(ctx, userID, teamID)
+}
+
+func (s *Service) ListMembers(ctx context.Context, teamID uuid.UUID) ([]Member, error) {
+	return s.repo.ListMembers(ctx, teamID)
+}
+
+func (s *Service) SetMemberActive(ctx context.Context, teamID, targetID, callerID uuid.UUID, active bool) error {
 	const op = "service.team.set_member_active"
 
 	if targetID == callerID {
@@ -47,24 +68,11 @@ func (s *Service) SetMemberActive(ctx context.Context, targetID, callerID uuid.U
 			Message: "you cannot change your own status",
 		}
 	}
-	return s.repo.SetMemberActive(ctx, targetID, active)
+	return s.repo.SetMemberActive(ctx, teamID, targetID, active)
 }
 
 func (s *Service) CreateInvitation(ctx context.Context, cmd CreateInvitationCmd) (Invitation, error) {
 	const op = "service.team.create_invitation"
-
-	// block inviting an email that already has an account
-	exists, err := s.repo.UserExistsByEmail(ctx, cmd.Email)
-	if err != nil {
-		return Invitation{}, err
-	}
-	if exists {
-		return Invitation{}, &apperror.Error{
-			Kind:    apperror.AlreadyExists,
-			Op:      op,
-			Message: "a user with this email already exists",
-		}
-	}
 
 	token, err := generateToken()
 	if err != nil {
@@ -80,12 +88,12 @@ func (s *Service) CreateInvitation(ctx context.Context, cmd CreateInvitationCmd)
 	return s.repo.CreateInvitation(ctx, cmd, token, expiresAt)
 }
 
-func (s *Service) ListInvitations(ctx context.Context) ([]Invitation, error) {
-	return s.repo.ListInvitations(ctx)
+func (s *Service) ListInvitations(ctx context.Context, teamID uuid.UUID) ([]Invitation, error) {
+	return s.repo.ListInvitations(ctx, teamID)
 }
 
-func (s *Service) RevokeInvitation(ctx context.Context, id uuid.UUID) error {
-	return s.repo.DeleteInvitation(ctx, id)
+func (s *Service) RevokeInvitation(ctx context.Context, teamID, invID uuid.UUID) error {
+	return s.repo.DeleteInvitation(ctx, teamID, invID)
 }
 
 func (s *Service) GetInvitationByToken(ctx context.Context, token string) (Invitation, error) {
@@ -123,13 +131,27 @@ func (s *Service) AcceptInvitation(ctx context.Context, cmd AcceptInvitationCmd)
 		return err
 	}
 
-	hashedPw, err := s.hashSvc(cmd.Password)
+	// Check if user already exists
+	existingUserID, exists, err := s.repo.GetUserByEmail(ctx, inv.Email)
 	if err != nil {
-		return &apperror.Error{Kind: apperror.Internal, Op: op, Message: "internal error", Err: err}
+		return err
 	}
 
-	_, err = s.repo.CreateUser(ctx, inv.Email, cmd.Name, hashedPw, inv.Role)
-	if err != nil {
+	var userID uuid.UUID
+	if exists {
+		userID = existingUserID
+	} else {
+		hashedPw, err := s.hashSvc(cmd.Password)
+		if err != nil {
+			return &apperror.Error{Kind: apperror.Internal, Op: op, Message: "internal error", Err: err}
+		}
+		userID, err = s.repo.CreateUser(ctx, inv.Email, cmd.Name, hashedPw, inv.Role)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := s.repo.AddMember(ctx, inv.TeamID, userID, inv.Role); err != nil {
 		return err
 	}
 

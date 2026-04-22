@@ -31,6 +31,7 @@ type Invitation struct {
 	AcceptedAt pgtype.Timestamptz
 	InvitedBy  pgtype.UUID
 	CreatedAt  pgtype.Timestamptz
+	TeamID     pgtype.UUID
 }
 
 type Monitor struct {
@@ -45,6 +46,7 @@ type Monitor struct {
 	Enabled            bool
 	UpdatedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
+	TeamID             pgtype.UUID
 }
 
 type MonitorIncident struct {
@@ -59,9 +61,19 @@ type MonitorIncident struct {
 }
 
 type Team struct {
-	ID        int32
+	ID        pgtype.UUID
 	Name      string
 	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type TeamMember struct {
+	ID       pgtype.UUID
+	TeamID   pgtype.UUID
+	UserID   pgtype.UUID
+	Role     string
+	IsActive bool
+	JoinedAt pgtype.Timestamptz
 }
 
 type User struct {

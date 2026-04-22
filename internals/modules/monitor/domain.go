@@ -7,6 +7,7 @@ import (
 )
 
 type CreateMonitor struct {
+	TeamID             uuid.UUID
 	UserID             uuid.UUID
 	Url                string
 	IntervalSec        int32
@@ -18,6 +19,7 @@ type CreateMonitor struct {
 
 type Monitor struct {
 	ID                 uuid.UUID
+	TeamID             uuid.UUID
 	UserID             uuid.UUID
 	Url                string
 	AlertEmail         string

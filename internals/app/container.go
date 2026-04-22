@@ -30,6 +30,7 @@ type Container struct {
 	monitorHandler  *monitor.Handler
 	teamHandler     *team.Handler
 	authMW          *middle.AuthMiddleware
+	teamAccessMW    *middle.TeamAccessMiddleware
 	Scheduler       *scheduler.Scheduler
 	Executor        *executor.Executor
 	ResultPro       *result.ResultProcessor
@@ -47,9 +48,9 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 	v := validator.New()
 	tokenSvc := security.NewTokenService(&cfg.Auth)
 
-	jobChan := make(chan scheduler.JobPayload, cfg.App.JobChannelSize)      // specify channel size in config
-	resultChan := make(chan executor.HTTPResult, cfg.App.ResultChannelSize) // specify channel size in config
-	alertChan := make(chan alert.AlertEvent, cfg.App.AlertChannelSize)      // specify channel size in config
+	jobChan := make(chan scheduler.JobPayload, cfg.App.JobChannelSize)
+	resultChan := make(chan executor.HTTPResult, cfg.App.ResultChannelSize)
+	alertChan := make(chan alert.AlertEvent, cfg.App.AlertChannelSize)
 
 	monitorRepo := monitor.NewRepository(db, logger)
 	monitorIncidentRepo := result.NewMonitorIncidentRepo(db, logger)
@@ -74,6 +75,8 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 	teamHandler := team.NewHandler(teamSvc, v, logger)
 
 	authMW := middle.NewAuthMiddleware(tokenSvc, userService)
+	teamAccessMW := middle.NewTeamAccess(teamSvc)
+
 	return &Container{
 		RedisClient:     *redisClient,
 		Logger:          logger,
@@ -82,6 +85,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 		userHandler:     userHandler,
 		incidentHandler: incidentHandler,
 		authMW:          authMW,
+		teamAccessMW:    teamAccessMW,
 		monitorHandler:  monitorHandler,
 		teamHandler:     teamHandler,
 		Scheduler:       sch,
@@ -92,7 +96,6 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 		ResultChan:      resultChan,
 		AlertChan:       alertChan,
 	}, nil
-
 }
 
 func (c *Container) Shutdown() error {
@@ -108,7 +111,6 @@ func (c *Container) Shutdown() error {
 
 	c.AlertSvc.WorkerClosingWait()
 
-	// close redis
 	err := c.RedisClient.Close()
 	if err != nil {
 		return err

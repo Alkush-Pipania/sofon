@@ -30,20 +30,6 @@ func (q *Queries) CloseMonitorIncident(ctx context.Context, arg CloseMonitorInci
 	return id, err
 }
 
-const countIncidentsByUserID = `-- name: CountIncidentsByUserID :one
-SELECT COUNT(*)::BIGINT
-FROM monitor_incidents mi
-JOIN monitors m ON m.id = mi.monitor_id
-WHERE m.user_id = $1
-`
-
-func (q *Queries) CountIncidentsByUserID(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countIncidentsByUserID, userID)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const createMonitorIncident = `-- name: CreateMonitorIncident :one
 INSERT INTO monitor_incidents (monitor_id, start_time, alerted, http_status, latency_ms)
 VALUES ($1, $2, $3, $4, $5)
@@ -71,7 +57,7 @@ func (q *Queries) CreateMonitorIncident(ctx context.Context, arg CreateMonitorIn
 	return id, err
 }
 
-const getIncidentByIDAndUserID = `-- name: GetIncidentByIDAndUserID :one
+const getIncidentByIDAndTeamID = `-- name: GetIncidentByIDAndTeamID :one
 SELECT
     mi.id,
     mi.monitor_id,
@@ -96,15 +82,15 @@ LEFT JOIN LATERAL (
     ORDER BY created_at DESC
     LIMIT 1
 ) a ON true
-WHERE mi.id = $1 AND m.user_id = $2
+WHERE mi.id = $1 AND m.team_id = $2
 `
 
-type GetIncidentByIDAndUserIDParams struct {
+type GetIncidentByIDAndTeamIDParams struct {
 	ID     pgtype.UUID
-	UserID pgtype.UUID
+	TeamID pgtype.UUID
 }
 
-type GetIncidentByIDAndUserIDRow struct {
+type GetIncidentByIDAndTeamIDRow struct {
 	ID          pgtype.UUID
 	MonitorID   pgtype.UUID
 	MonitorUrl  string
@@ -121,9 +107,9 @@ type GetIncidentByIDAndUserIDRow struct {
 	AlertSentAt pgtype.Timestamptz
 }
 
-func (q *Queries) GetIncidentByIDAndUserID(ctx context.Context, arg GetIncidentByIDAndUserIDParams) (GetIncidentByIDAndUserIDRow, error) {
-	row := q.db.QueryRow(ctx, getIncidentByIDAndUserID, arg.ID, arg.UserID)
-	var i GetIncidentByIDAndUserIDRow
+func (q *Queries) GetIncidentByIDAndTeamID(ctx context.Context, arg GetIncidentByIDAndTeamIDParams) (GetIncidentByIDAndTeamIDRow, error) {
+	row := q.db.QueryRow(ctx, getIncidentByIDAndTeamID, arg.ID, arg.TeamID)
+	var i GetIncidentByIDAndTeamIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.MonitorID,
@@ -165,7 +151,7 @@ func (q *Queries) GetMonitorIncidentByID(ctx context.Context, id pgtype.UUID) (M
 	return i, err
 }
 
-const listIncidentsByUserCursor = `-- name: ListIncidentsByUserCursor :many
+const listIncidentsByTeamCursor = `-- name: ListIncidentsByTeamCursor :many
 SELECT
     mi.id,
     mi.monitor_id,
@@ -190,7 +176,7 @@ LEFT JOIN LATERAL (
     ORDER BY created_at DESC
     LIMIT 1
 ) a ON true
-WHERE m.user_id = $1
+WHERE m.team_id = $1
   AND (
     $2::text = 'all'
         OR ($2::text = 'active' AND mi.end_time IS NULL)
@@ -208,8 +194,8 @@ ORDER BY mi.start_time DESC, mi.id DESC
 LIMIT $9
 `
 
-type ListIncidentsByUserCursorParams struct {
-	UserID  pgtype.UUID
+type ListIncidentsByTeamCursorParams struct {
+	TeamID  pgtype.UUID
 	Column2 string
 	Column3 pgtype.Timestamptz
 	Column4 pgtype.Timestamptz
@@ -220,7 +206,7 @@ type ListIncidentsByUserCursorParams struct {
 	Limit   int32
 }
 
-type ListIncidentsByUserCursorRow struct {
+type ListIncidentsByTeamCursorRow struct {
 	ID          pgtype.UUID
 	MonitorID   pgtype.UUID
 	MonitorUrl  string
@@ -237,9 +223,9 @@ type ListIncidentsByUserCursorRow struct {
 	AlertSentAt pgtype.Timestamptz
 }
 
-func (q *Queries) ListIncidentsByUserCursor(ctx context.Context, arg ListIncidentsByUserCursorParams) ([]ListIncidentsByUserCursorRow, error) {
-	rows, err := q.db.Query(ctx, listIncidentsByUserCursor,
-		arg.UserID,
+func (q *Queries) ListIncidentsByTeamCursor(ctx context.Context, arg ListIncidentsByTeamCursorParams) ([]ListIncidentsByTeamCursorRow, error) {
+	rows, err := q.db.Query(ctx, listIncidentsByTeamCursor,
+		arg.TeamID,
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
@@ -253,98 +239,9 @@ func (q *Queries) ListIncidentsByUserCursor(ctx context.Context, arg ListInciden
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListIncidentsByUserCursorRow
+	var items []ListIncidentsByTeamCursorRow
 	for rows.Next() {
-		var i ListIncidentsByUserCursorRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.MonitorID,
-			&i.MonitorUrl,
-			&i.StartTime,
-			&i.EndTime,
-			&i.Alerted,
-			&i.HttpStatus,
-			&i.LatencyMs,
-			&i.CreatedAt,
-			&i.IsActive,
-			&i.DurationSec,
-			&i.AlertStatus,
-			&i.AlertEmail,
-			&i.AlertSentAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listIncidentsByUserID = `-- name: ListIncidentsByUserID :many
-SELECT
-    mi.id,
-    mi.monitor_id,
-    m.url AS monitor_url,
-    mi.start_time,
-    mi.end_time,
-    mi.alerted,
-    mi.http_status,
-    mi.latency_ms,
-    mi.created_at,
-    (mi.end_time IS NULL)::BOOLEAN AS is_active,
-    EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
-    COALESCE(a.status, '') AS alert_status,
-    COALESCE(a.alert_email, '') AS alert_email,
-    a.sent_at AS alert_sent_at
-FROM monitor_incidents mi
-JOIN monitors m ON m.id = mi.monitor_id
-LEFT JOIN LATERAL (
-    SELECT status, alert_email, sent_at
-    FROM alerts
-    WHERE incident_id = mi.id
-    ORDER BY created_at DESC
-    LIMIT 1
-) a ON true
-WHERE m.user_id = $1
-ORDER BY mi.start_time DESC
-LIMIT $2
-OFFSET $3
-`
-
-type ListIncidentsByUserIDParams struct {
-	UserID pgtype.UUID
-	Limit  int32
-	Offset int32
-}
-
-type ListIncidentsByUserIDRow struct {
-	ID          pgtype.UUID
-	MonitorID   pgtype.UUID
-	MonitorUrl  string
-	StartTime   pgtype.Timestamptz
-	EndTime     pgtype.Timestamptz
-	Alerted     bool
-	HttpStatus  int32
-	LatencyMs   int32
-	CreatedAt   pgtype.Timestamptz
-	IsActive    bool
-	DurationSec int64
-	AlertStatus string
-	AlertEmail  string
-	AlertSentAt pgtype.Timestamptz
-}
-
-func (q *Queries) ListIncidentsByUserID(ctx context.Context, arg ListIncidentsByUserIDParams) ([]ListIncidentsByUserIDRow, error) {
-	rows, err := q.db.Query(ctx, listIncidentsByUserID, arg.UserID, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListIncidentsByUserIDRow
-	for rows.Next() {
-		var i ListIncidentsByUserIDRow
+		var i ListIncidentsByTeamCursorRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.MonitorID,

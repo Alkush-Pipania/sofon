@@ -1,7 +1,6 @@
 package incident
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,14 +33,13 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	userID, ok := userIDFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
 	limit := int32(20)
-
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		l, err := strconv.ParseInt(limitStr, 10, 32)
 		if err != nil || l <= 0 || l > 100 {
@@ -111,7 +109,7 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 		cursor = decoded
 	}
 
-	page, err := h.service.ListByUserID(ctx, userID, ListIncidentsOptions{
+	page, err := h.service.ListByTeamID(ctx, tm.TeamID, ListIncidentsOptions{
 		Limit:  limit,
 		Cursor: cursor,
 		Filters: ListFilters{
@@ -159,39 +157,26 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	userID, ok := userIDFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
-	incidentIDStr := chi.URLParam(r, "incidentID")
-	incidentID, err := uuid.Parse(incidentIDStr)
+	incidentID, err := uuid.Parse(chi.URLParam(r, "incidentID"))
 	if err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid incident id")
 		return
 	}
 
-	incident, err := h.service.GetByIDAndUserID(ctx, incidentID, userID)
+	inc, err := h.service.GetByIDAndTeamID(ctx, incidentID, tm.TeamID)
 	if err != nil {
 		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("failed to get incident")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, reqID, "incident retrieved", toIncidentResponse(&incident))
-}
-
-func userIDFromContext(ctx context.Context) (uuid.UUID, bool) {
-	claims, ok := middle.UserFromContext(ctx)
-	if !ok {
-		return uuid.Nil, false
-	}
-	id, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return uuid.Nil, false
-	}
-	return id, true
+	utils.WriteJSON(w, http.StatusOK, reqID, "incident retrieved", toIncidentResponse(&inc))
 }
 
 func toIncidentResponse(i *Incident) IncidentResponse {

@@ -34,31 +34,35 @@ func (h *Handler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	reqClaims, ok := middle.UserFromContext(ctx)
+	claims, ok := middle.UserFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user unauthorised")
 		return
 	}
-	userID, err := uuid.Parse(reqClaims.UserID)
+	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user unauthorised")
 		return
 	}
 
-	// decode request body
+	tm, ok := middle.TeamMemberFromContext(ctx)
+	if !ok {
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
+		return
+	}
+
 	var req CreateMonitorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request")
 		return
 	}
-
-	// valideate request body
 	if err := h.validator.Struct(req); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request")
 		return
 	}
 
 	mID, err := h.service.CreateMonitor(ctx, CreateMonitor{
+		TeamID:             tm.TeamID,
 		UserID:             userID,
 		Url:                req.Url,
 		IntervalSec:        req.IntervalSec,
@@ -68,15 +72,12 @@ func (h *Handler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 		AlertEmail:         req.AlertEmail,
 	})
 	if err != nil {
-		h.logger.Error().
-			Str("op", op).
-			Str("req_id", reqID).
-			Err(err).
-			Msg("create monitor error")
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("create monitor error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
-	utils.WriteJSON(w, http.StatusCreated, reqID, "monitor created sucessfully", CreateMonitorResponse{MonitorID: mID.String()})
+
+	utils.WriteJSON(w, http.StatusCreated, reqID, "monitor created successfully", CreateMonitorResponse{MonitorID: mID.String()})
 }
 
 func (h *Handler) GetMonitor(w http.ResponseWriter, r *http.Request) {
@@ -84,35 +85,26 @@ func (h *Handler) GetMonitor(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	reqClaims, ok := middle.UserFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
-		return
-	}
-	userID, err := uuid.Parse(reqClaims.UserID)
-	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
-	mIDStr := chi.URLParam(r, "monitorID")
-	monitorID, err := uuid.Parse(mIDStr)
+	monitorID, err := uuid.Parse(chi.URLParam(r, "monitorID"))
 	if err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
 		return
 	}
 
-	mon, err := h.service.GetMonitor(ctx, userID, monitorID)
+	mon, err := h.service.GetMonitor(ctx, tm.TeamID, monitorID)
 	if err != nil {
-		h.logger.Error().
-			Str("op", op).
-			Str("req_id", reqID).
-			Err(err).
-			Msg("retriving monitor error")
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("retrieving monitor error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
-	m := GetMonitorResponse{
+
+	utils.WriteJSON(w, http.StatusOK, reqID, "monitor retrieved", GetMonitorResponse{
 		ID:                 mon.ID.String(),
 		Url:                mon.Url,
 		AlertEmail:         mon.AlertEmail,
@@ -121,25 +113,17 @@ func (h *Handler) GetMonitor(w http.ResponseWriter, r *http.Request) {
 		LatencyThresholdMs: mon.LatencyThresholdMs,
 		ExpectedStatus:     mon.ExpectedStatus,
 		Enabled:            mon.Enabled,
-	}
-
-	utils.WriteJSON(w, http.StatusOK, reqID, "moniter retrived", m)
+	})
 }
 
-// /monitors?offset=3&limit=10
 func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 	const op string = "handler.monitor.get_all_monitor"
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	reqClaims, ok := middle.UserFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
-		return
-	}
-	userID, err := uuid.Parse(reqClaims.UserID)
-	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
@@ -160,20 +144,17 @@ func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = 10
 	}
-	if offset <= 0 {
+	if offset < 0 {
 		offset = 0
 	}
 
-	monitors, err := h.service.GetAllMonitors(ctx, userID, int32(limit), int32(offset))
+	monitors, err := h.service.GetAllMonitors(ctx, tm.TeamID, int32(limit), int32(offset))
 	if err != nil {
-		h.logger.Error().
-			Str("op", op).
-			Str("req_id", reqID).
-			Err(err).
-			Msg("retriving all monitors error")
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("retrieving all monitors error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
+
 	m := make([]GetMonitorResponse, 0, len(monitors))
 	for i := range monitors {
 		mon := &monitors[i]
@@ -189,14 +170,12 @@ func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	resp := GetAllMonitorsResponse{
-		UserID:   reqClaims.UserID,
+	utils.WriteJSON(w, http.StatusOK, reqID, "monitors retrieved", GetAllMonitorsResponse{
+		TeamID:   tm.TeamID.String(),
 		Limit:    int32(limit),
 		Offset:   int32(offset),
 		Monitors: m,
-	}
-
-	utils.WriteJSON(w, http.StatusOK, reqID, "monitors retrived", resp)
+	})
 }
 
 func (h *Handler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
@@ -204,30 +183,20 @@ func (h *Handler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	reqClaims, ok := middle.UserFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
-		return
-	}
-	userID, err := uuid.Parse(reqClaims.UserID)
-	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
-	mIDStr := chi.URLParam(r, "monitorID")
-	monitorID, err := uuid.Parse(mIDStr)
+	monitorID, err := uuid.Parse(chi.URLParam(r, "monitorID"))
 	if err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
 		return
 	}
 
-	if err := h.service.DeleteMonitor(ctx, userID, monitorID); err != nil {
-		h.logger.Error().
-			Str("op", op).
-			Str("req_id", reqID).
-			Err(err).
-			Msg("delete monitor error")
+	if err := h.service.DeleteMonitor(ctx, tm.TeamID, monitorID); err != nil {
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("delete monitor error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
@@ -235,56 +204,38 @@ func (h *Handler) DeleteMonitor(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, reqID, "monitor deleted successfully", "")
 }
 
-// Patch : /monitors/{monitorID}
-//
-//	{
-//		enable: false/true
-//	}
 func (h *Handler) UpdateMonitorStatus(w http.ResponseWriter, r *http.Request) {
 	const op string = "handler.monitor.update_monitor_status"
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	reqClaims, ok := middle.UserFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
-	userID, err := uuid.Parse(reqClaims.UserID)
-	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user Unauthorised")
-		return
-	}
-	mIDStr := chi.URLParam(r, "monitorID")
-	monitorID, err := uuid.Parse(mIDStr)
+
+	monitorID, err := uuid.Parse(chi.URLParam(r, "monitorID"))
 	if err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
 		return
 	}
 
-	// decode request body
 	var req UpdateMonitorStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid request")
 		return
 	}
-
-	// valideate request body
 	if err := h.validator.Struct(req); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
 		return
 	}
 
-	_, err = h.service.UpdateMonitorStatus(ctx, userID, monitorID, *req.Enable)
-	if err != nil {
-		h.logger.Error().
-			Str("op", op).
-			Str("req_id", reqID).
-			Err(err).
-			Msg("updating monitor status error")
+	if _, err := h.service.UpdateMonitorStatus(ctx, tm.TeamID, monitorID, *req.Enable); err != nil {
+		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("updating monitor status error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, reqID, "Monitor status updated successfully", "ok")
+	utils.WriteJSON(w, http.StatusOK, reqID, "monitor status updated successfully", "ok")
 }

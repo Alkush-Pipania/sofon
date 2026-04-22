@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	middle "github.com/alkush-pipania/sofon/internals/middleware"
 	"github.com/alkush-pipania/sofon/pkg/db"
 	"github.com/alkush-pipania/sofon/pkg/utils"
 	"github.com/google/uuid"
@@ -25,52 +26,146 @@ func NewRepository(dbExecutor db.DBTX, logger *zerolog.Logger) *repository {
 	}
 }
 
-func (r *repository) GetTeam(ctx context.Context) (Team, error) {
-	const op = "repo.team.get_team"
+func (r *repository) CreateTeam(ctx context.Context, name string) (Team, error) {
+	const op = "repo.team.create_team"
 
-	row, err := r.querier.GetTeam(ctx)
+	row, err := r.querier.CreateTeam(ctx, name)
 	if err != nil {
 		return Team{}, utils.WrapRepoError(op, err, r.logger)
 	}
-	return Team{ID: int(row.ID), Name: row.Name}, nil
+	return Team{
+		ID:        utils.FromPgUUID(row.ID),
+		Name:      row.Name,
+		CreatedAt: row.CreatedAt.Time,
+		UpdatedAt: row.UpdatedAt.Time,
+	}, nil
 }
 
-func (r *repository) UpdateTeamName(ctx context.Context, name string) error {
+func (r *repository) GetTeamByID(ctx context.Context, teamID uuid.UUID) (Team, error) {
+	const op = "repo.team.get_team_by_id"
+
+	row, err := r.querier.GetTeamByID(ctx, utils.ToPgUUID(teamID))
+	if err != nil {
+		return Team{}, utils.WrapRepoError(op, err, r.logger)
+	}
+	return Team{
+		ID:        utils.FromPgUUID(row.ID),
+		Name:      row.Name,
+		CreatedAt: row.CreatedAt.Time,
+		UpdatedAt: row.UpdatedAt.Time,
+	}, nil
+}
+
+func (r *repository) ListTeamsByUserID(ctx context.Context, userID uuid.UUID) ([]Team, error) {
+	const op = "repo.team.list_teams_by_user_id"
+
+	rows, err := r.querier.ListTeamsByUserID(ctx, utils.ToPgUUID(userID))
+	if err != nil {
+		return nil, utils.WrapRepoError(op, err, r.logger)
+	}
+
+	teams := make([]Team, len(rows))
+	for i, row := range rows {
+		teams[i] = Team{
+			ID:        utils.FromPgUUID(row.ID),
+			Name:      row.Name,
+			CreatedAt: row.CreatedAt.Time,
+			UpdatedAt: row.UpdatedAt.Time,
+		}
+	}
+	return teams, nil
+}
+
+func (r *repository) UpdateTeamName(ctx context.Context, teamID uuid.UUID, name string) error {
 	const op = "repo.team.update_team_name"
 
-	err := r.querier.UpdateTeamName(ctx, name)
+	err := r.querier.UpdateTeamName(ctx, db.UpdateTeamNameParams{
+		ID:   utils.ToPgUUID(teamID),
+		Name: name,
+	})
 	if err != nil {
 		return utils.WrapRepoError(op, err, r.logger)
 	}
 	return nil
 }
 
-func (r *repository) ListMembers(ctx context.Context) ([]Member, error) {
+func (r *repository) AddMember(ctx context.Context, teamID, userID uuid.UUID, role string) error {
+	const op = "repo.team.add_member"
+
+	_, err := r.querier.AddTeamMember(ctx, db.AddTeamMemberParams{
+		TeamID: utils.ToPgUUID(teamID),
+		UserID: utils.ToPgUUID(userID),
+		Role:   role,
+	})
+	if err != nil {
+		return utils.WrapRepoError(op, err, r.logger)
+	}
+	return nil
+}
+
+func (r *repository) GetMembership(ctx context.Context, userID, teamID uuid.UUID) (middle.TeamMemberCtx, error) {
+	const op = "repo.team.get_membership"
+
+	row, err := r.querier.GetTeamMembership(ctx, db.GetTeamMembershipParams{
+		TeamID: utils.ToPgUUID(teamID),
+		UserID: utils.ToPgUUID(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return middle.TeamMemberCtx{}, utils.WrapRepoError(op, pgx.ErrNoRows, r.logger)
+		}
+		return middle.TeamMemberCtx{}, utils.WrapRepoError(op, err, r.logger)
+	}
+	return middle.TeamMemberCtx{
+		MemberID: utils.FromPgUUID(row.ID),
+		TeamID:   utils.FromPgUUID(row.TeamID),
+		UserID:   utils.FromPgUUID(row.UserID),
+		Role:     row.Role,
+		IsActive: row.IsActive,
+	}, nil
+}
+
+func (r *repository) ListMembers(ctx context.Context, teamID uuid.UUID) ([]Member, error) {
 	const op = "repo.team.list_members"
 
-	rows, err := r.querier.ListUsers(ctx)
+	rows, err := r.querier.ListTeamMembers(ctx, utils.ToPgUUID(teamID))
 	if err != nil {
 		return nil, utils.WrapRepoError(op, err, r.logger)
 	}
 
 	members := make([]Member, len(rows))
-	for i, u := range rows {
+	for i, row := range rows {
 		members[i] = Member{
-			ID:        utils.FromPgUUID(u.ID),
-			Name:      u.Name,
-			Email:     u.Email,
-			Role:      u.Role,
-			IsActive:  u.IsActive,
-			CreatedAt: u.CreatedAt.Time,
+			ID:        utils.FromPgUUID(row.ID),
+			Name:      row.Name,
+			Email:     row.Email,
+			Role:      row.Role,
+			IsActive:  row.IsActive,
+			CreatedAt: row.CreatedAt.Time,
 		}
 	}
 	return members, nil
+}
+
+func (r *repository) SetMemberActive(ctx context.Context, teamID, userID uuid.UUID, active bool) error {
+	const op = "repo.team.set_member_active"
+
+	err := r.querier.SetTeamMemberActive(ctx, db.SetTeamMemberActiveParams{
+		TeamID:   utils.ToPgUUID(teamID),
+		UserID:   utils.ToPgUUID(userID),
+		IsActive: active,
+	})
+	if err != nil {
+		return utils.WrapRepoError(op, err, r.logger)
+	}
+	return nil
 }
 
 func (r *repository) CreateInvitation(ctx context.Context, cmd CreateInvitationCmd, token string, expiresAt time.Time) (Invitation, error) {
 	const op = "repo.team.create_invitation"
 
 	row, err := r.querier.CreateInvitation(ctx, db.CreateInvitationParams{
+		TeamID:    utils.ToPgUUID(cmd.TeamID),
 		Email:     cmd.Email,
 		Role:      cmd.Role,
 		Token:     token,
@@ -83,6 +178,7 @@ func (r *repository) CreateInvitation(ctx context.Context, cmd CreateInvitationC
 
 	inv := Invitation{
 		ID:        utils.FromPgUUID(row.ID),
+		TeamID:    utils.FromPgUUID(row.TeamID),
 		Email:     row.Email,
 		Role:      row.Role,
 		Token:     row.Token,
@@ -107,6 +203,7 @@ func (r *repository) GetInvitationByToken(ctx context.Context, token string) (In
 
 	inv := Invitation{
 		ID:        utils.FromPgUUID(row.ID),
+		TeamID:    utils.FromPgUUID(row.TeamID),
 		Email:     row.Email,
 		Role:      row.Role,
 		Token:     row.Token,
@@ -121,10 +218,10 @@ func (r *repository) GetInvitationByToken(ctx context.Context, token string) (In
 	return inv, nil
 }
 
-func (r *repository) ListInvitations(ctx context.Context) ([]Invitation, error) {
+func (r *repository) ListInvitations(ctx context.Context, teamID uuid.UUID) ([]Invitation, error) {
 	const op = "repo.team.list_invitations"
 
-	rows, err := r.querier.ListInvitations(ctx)
+	rows, err := r.querier.ListInvitations(ctx, utils.ToPgUUID(teamID))
 	if err != nil {
 		return nil, utils.WrapRepoError(op, err, r.logger)
 	}
@@ -133,6 +230,7 @@ func (r *repository) ListInvitations(ctx context.Context) ([]Invitation, error) 
 	for i, row := range rows {
 		inv := Invitation{
 			ID:        utils.FromPgUUID(row.ID),
+			TeamID:    utils.FromPgUUID(row.TeamID),
 			Email:     row.Email,
 			Role:      row.Role,
 			Token:     row.Token,
@@ -159,10 +257,13 @@ func (r *repository) AcceptInvitation(ctx context.Context, token string) error {
 	return nil
 }
 
-func (r *repository) DeleteInvitation(ctx context.Context, id uuid.UUID) error {
+func (r *repository) DeleteInvitation(ctx context.Context, teamID, invID uuid.UUID) error {
 	const op = "repo.team.delete_invitation"
 
-	err := r.querier.DeleteInvitation(ctx, utils.ToPgUUID(id))
+	err := r.querier.DeleteInvitation(ctx, db.DeleteInvitationParams{
+		ID:     utils.ToPgUUID(invID),
+		TeamID: utils.ToPgUUID(teamID),
+	})
 	if err != nil {
 		return utils.WrapRepoError(op, err, r.logger)
 	}
@@ -184,28 +285,15 @@ func (r *repository) CreateUser(ctx context.Context, email, name, passwordHash, 
 	return utils.FromPgUUID(id), nil
 }
 
-func (r *repository) SetMemberActive(ctx context.Context, userID uuid.UUID, active bool) error {
-	const op = "repo.team.set_member_active"
+func (r *repository) GetUserByEmail(ctx context.Context, email string) (uuid.UUID, bool, error) {
+	const op = "repo.team.get_user_by_email"
 
-	err := r.querier.SetUserActive(ctx, db.SetUserActiveParams{
-		IsActive: active,
-		ID:       utils.ToPgUUID(userID),
-	})
-	if err != nil {
-		return utils.WrapRepoError(op, err, r.logger)
-	}
-	return nil
-}
-
-func (r *repository) UserExistsByEmail(ctx context.Context, email string) (bool, error) {
-	const op = "repo.team.user_exists_by_email"
-
-	_, err := r.querier.GetUserByEmail(ctx, email)
+	row, err := r.querier.GetUserByEmail(ctx, email)
 	if err == nil {
-		return true, nil
+		return utils.FromPgUUID(row.ID), true, nil
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return uuid.Nil, false, nil
 	}
-	return false, utils.WrapRepoError(op, err, r.logger)
+	return uuid.Nil, false, utils.WrapRepoError(op, err, r.logger)
 }

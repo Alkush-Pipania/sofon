@@ -1,5 +1,9 @@
 package team
 
+type CreateTeamRequest struct {
+	Name string `json:"name" validate:"required,min=1,max=100"`
+}
+
 type UpdateTeamRequest struct {
 	Name string `json:"name" validate:"required,min=1,max=100"`
 }
@@ -16,7 +20,9 @@ type AcceptInvitationRequest struct {
 }
 
 type TeamResponse struct {
-	Name string `json:"name"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
 }
 
 type MemberResponse struct {
@@ -29,11 +35,11 @@ type MemberResponse struct {
 }
 
 type InvitationResponse struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	Role      string  `json:"role"`
-	Link      string  `json:"link"`
-	ExpiresAt string  `json:"expires_at"`
-	Accepted  bool    `json:"accepted"`
-	CreatedAt string  `json:"created_at"`
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	Link      string `json:"link"`
+	ExpiresAt string `json:"expires_at"`
+	Accepted  bool   `json:"accepted"`
+	CreatedAt string `json:"created_at"`
 }

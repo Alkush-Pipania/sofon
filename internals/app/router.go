@@ -36,12 +36,19 @@ func NewRouter(container *Container) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
 	r.Route("/api/v1", func(v1 chi.Router) {
 		v1.Mount("/users", user.Routes(container.userHandler, container.authMW))
 
-		v1.With(container.authMW.Handle).Mount("/monitors", monitor.Routes(container.monitorHandler))
-		v1.With(container.authMW.Handle).Mount("/incidents", incident.Routes(container.incidentHandler))
-		v1.Mount("/team", team.Routes(container.teamHandler, container.authMW))
+		// Teams: list/create at root; team-scoped resources under /{teamID}
+		v1.Mount("/teams", team.Routes(container.teamHandler, container.authMW, container.teamAccessMW))
+
+		// Monitors and incidents are nested under a team
+		v1.With(container.authMW.Handle).Route("/teams/{teamID}", func(r chi.Router) {
+			r.Use(container.teamAccessMW.Handle)
+			r.Mount("/monitors", monitor.Routes(container.monitorHandler))
+			r.Mount("/incidents", incident.Routes(container.incidentHandler))
+		})
 	})
 
 	return r

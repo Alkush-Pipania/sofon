@@ -25,7 +25,7 @@ type GetMonitorResponse struct {
 }
 
 type GetAllMonitorsResponse struct {
-	UserID   string               `json:"user_id"`
+	TeamID   string               `json:"team_id"`
 	Limit    int32                `json:"limit"`
 	Offset   int32                `json:"offset"`
 	Monitors []GetMonitorResponse `json:"monitors"`

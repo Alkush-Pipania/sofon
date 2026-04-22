@@ -26,8 +26,8 @@ func NewRepository(dbExecutor db.DBTX, logger *zerolog.Logger) *Repository {
 	}
 }
 
-func (r *Repository) ListByUserID(ctx context.Context, userID uuid.UUID, opts ListIncidentsOptions) ([]Incident, bool, error) {
-	const op string = "repo.incident.list_by_user_id"
+func (r *Repository) ListByTeamID(ctx context.Context, teamID uuid.UUID, opts ListIncidentsOptions) ([]Incident, bool, error) {
+	const op string = "repo.incident.list_by_team_id"
 
 	limit := opts.Limit
 	if limit <= 0 {
@@ -65,8 +65,8 @@ func (r *Repository) ListByUserID(ctx context.Context, userID uuid.UUID, opts Li
 		cursorID = utils.ToPgUUID(parsedCursorID)
 	}
 
-	rows, err := r.querier.ListIncidentsByUserCursor(ctx, db.ListIncidentsByUserCursorParams{
-		UserID:  utils.ToPgUUID(userID),
+	rows, err := r.querier.ListIncidentsByTeamCursor(ctx, db.ListIncidentsByTeamCursorParams{
+		TeamID:  utils.ToPgUUID(teamID),
 		Column2: opts.Filters.Status,
 		Column3: fromTS,
 		Column4: toTS,
@@ -109,12 +109,12 @@ func (r *Repository) ListByUserID(ctx context.Context, userID uuid.UUID, opts Li
 	return incidents, hasMore, nil
 }
 
-func (r *Repository) GetByIDAndUserID(ctx context.Context, incidentID uuid.UUID, userID uuid.UUID) (Incident, error) {
-	const op string = "repo.incident.get_by_id_and_user_id"
+func (r *Repository) GetByIDAndTeamID(ctx context.Context, incidentID uuid.UUID, teamID uuid.UUID) (Incident, error) {
+	const op string = "repo.incident.get_by_id_and_team_id"
 
-	row, err := r.querier.GetIncidentByIDAndUserID(ctx, db.GetIncidentByIDAndUserIDParams{
+	row, err := r.querier.GetIncidentByIDAndTeamID(ctx, db.GetIncidentByIDAndTeamIDParams{
 		ID:     utils.ToPgUUID(incidentID),
-		UserID: utils.ToPgUUID(userID),
+		TeamID: utils.ToPgUUID(teamID),
 	})
 	if err == nil {
 		return Incident{

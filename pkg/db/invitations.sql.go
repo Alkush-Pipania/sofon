@@ -21,12 +21,13 @@ func (q *Queries) AcceptInvitation(ctx context.Context, token string) error {
 }
 
 const createInvitation = `-- name: CreateInvitation :one
-INSERT INTO invitations (email, role, token, expires_at, invited_by)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, email, role, token, expires_at, accepted_at, invited_by, created_at
+INSERT INTO invitations (team_id, email, role, token, expires_at, invited_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, team_id, email, role, token, expires_at, accepted_at, invited_by, created_at
 `
 
 type CreateInvitationParams struct {
+	TeamID    pgtype.UUID
 	Email     string
 	Role      string
 	Token     string
@@ -34,17 +35,31 @@ type CreateInvitationParams struct {
 	InvitedBy pgtype.UUID
 }
 
-func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (Invitation, error) {
+type CreateInvitationRow struct {
+	ID         pgtype.UUID
+	TeamID     pgtype.UUID
+	Email      string
+	Role       string
+	Token      string
+	ExpiresAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	InvitedBy  pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (CreateInvitationRow, error) {
 	row := q.db.QueryRow(ctx, createInvitation,
+		arg.TeamID,
 		arg.Email,
 		arg.Role,
 		arg.Token,
 		arg.ExpiresAt,
 		arg.InvitedBy,
 	)
-	var i Invitation
+	var i CreateInvitationRow
 	err := row.Scan(
 		&i.ID,
+		&i.TeamID,
 		&i.Email,
 		&i.Role,
 		&i.Token,
@@ -57,25 +72,43 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 }
 
 const deleteInvitation = `-- name: DeleteInvitation :exec
-DELETE FROM invitations WHERE id = $1
+DELETE FROM invitations WHERE id = $1 AND team_id = $2
 `
 
-func (q *Queries) DeleteInvitation(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteInvitation, id)
+type DeleteInvitationParams struct {
+	ID     pgtype.UUID
+	TeamID pgtype.UUID
+}
+
+func (q *Queries) DeleteInvitation(ctx context.Context, arg DeleteInvitationParams) error {
+	_, err := q.db.Exec(ctx, deleteInvitation, arg.ID, arg.TeamID)
 	return err
 }
 
 const getInvitationByToken = `-- name: GetInvitationByToken :one
-SELECT id, email, role, token, expires_at, accepted_at, invited_by, created_at
+SELECT id, team_id, email, role, token, expires_at, accepted_at, invited_by, created_at
 FROM invitations
 WHERE token = $1
 `
 
-func (q *Queries) GetInvitationByToken(ctx context.Context, token string) (Invitation, error) {
+type GetInvitationByTokenRow struct {
+	ID         pgtype.UUID
+	TeamID     pgtype.UUID
+	Email      string
+	Role       string
+	Token      string
+	ExpiresAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	InvitedBy  pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) GetInvitationByToken(ctx context.Context, token string) (GetInvitationByTokenRow, error) {
 	row := q.db.QueryRow(ctx, getInvitationByToken, token)
-	var i Invitation
+	var i GetInvitationByTokenRow
 	err := row.Scan(
 		&i.ID,
+		&i.TeamID,
 		&i.Email,
 		&i.Role,
 		&i.Token,
@@ -88,22 +121,36 @@ func (q *Queries) GetInvitationByToken(ctx context.Context, token string) (Invit
 }
 
 const listInvitations = `-- name: ListInvitations :many
-SELECT id, email, role, token, expires_at, accepted_at, invited_by, created_at
+SELECT id, team_id, email, role, token, expires_at, accepted_at, invited_by, created_at
 FROM invitations
+WHERE team_id = $1 AND accepted_at IS NULL
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListInvitations(ctx context.Context) ([]Invitation, error) {
-	rows, err := q.db.Query(ctx, listInvitations)
+type ListInvitationsRow struct {
+	ID         pgtype.UUID
+	TeamID     pgtype.UUID
+	Email      string
+	Role       string
+	Token      string
+	ExpiresAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	InvitedBy  pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) ListInvitations(ctx context.Context, teamID pgtype.UUID) ([]ListInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listInvitations, teamID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Invitation
+	var items []ListInvitationsRow
 	for rows.Next() {
-		var i Invitation
+		var i ListInvitationsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TeamID,
 			&i.Email,
 			&i.Role,
 			&i.Token,
