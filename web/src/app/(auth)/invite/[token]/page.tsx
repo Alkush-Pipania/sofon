@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { InviteForm } from "./invite-form";
 import { serverApiBase } from "@/lib/server-api";
 
+export const dynamic = "force-dynamic";
+
 interface InviteData {
     email: string;
     role: string;

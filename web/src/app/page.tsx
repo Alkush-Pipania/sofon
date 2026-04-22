@@ -1,19 +1,25 @@
-"use client";
+import { redirect } from "next/navigation";
+import { serverApiBase } from "@/lib/server-api";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+export const dynamic = "force-dynamic";
 
-export default function Home() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const token = localStorage.getItem("sofon_token");
-    if (token) {
-      router.replace("/monitors");
-    } else {
-      router.replace("/signin");
+async function getSetupStatus(): Promise<{ registrationsEnabled: boolean }> {
+    try {
+        const res = await fetch(
+            `${serverApiBase()}/api/v1/users/setup-status`,
+            { cache: "no-store" },
+        );
+        const json = await res.json();
+        return { registrationsEnabled: json?.data?.registrations_enabled ?? false };
+    } catch {
+        return { registrationsEnabled: false };
     }
-  }, [router]);
+}
 
-  return null;
+export default async function Home() {
+    const { registrationsEnabled } = await getSetupStatus();
+    if (registrationsEnabled) {
+        redirect("/register");
+    }
+    redirect("/signin");
 }

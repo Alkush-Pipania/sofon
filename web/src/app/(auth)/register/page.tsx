@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { RegisterForm } from "./register-form";
 import { serverApiBase } from "@/lib/server-api";
 
+export const dynamic = "force-dynamic";
+
 async function getRegistrationsEnabled(): Promise<boolean> {
     try {
         const res = await fetch(
