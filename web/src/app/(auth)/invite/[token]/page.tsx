@@ -14,7 +14,7 @@ interface InviteData {
 async function getInvite(token: string): Promise<InviteData | null> {
     try {
         const res = await fetch(
-            `${serverApiBase()}/api/v1/team/invitations/${token}`,
+            `${serverApiBase()}/api/v1/teams/invitations/${token}`,
             { cache: "no-store" },
         );
         if (!res.ok) return null;

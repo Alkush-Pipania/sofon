@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { get } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
+import { useTeamStore } from "@/store/team-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ function formatDuration(seconds: number): string {
 export default function IncidentDetailPage() {
 	const params = useParams<{ incidentID: string }>();
 	const incidentID = String(params.incidentID || "");
+	const currentTeam = useTeamStore((s) => s.currentTeam);
 
 	const [incident, setIncident] = useState<Incident | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -55,10 +57,11 @@ export default function IncidentDetailPage() {
 
 	useEffect(() => {
 		const run = async () => {
+			if (!currentTeam) return;
 			setLoading(true);
 			setError(null);
 			try {
-				const res = await get<IncidentDetailResponse>(ENDPOINTS.INCIDENTS.GET(incidentID));
+				const res = await get<IncidentDetailResponse>(ENDPOINTS.INCIDENTS.GET(currentTeam.id, incidentID));
 				setIncident(res.data);
 			} catch (err: unknown) {
 				setError(err instanceof Error ? err.message : "Failed to load incident");
@@ -68,7 +71,7 @@ export default function IncidentDetailPage() {
 		};
 
 		if (incidentID) run();
-	}, [incidentID]);
+	}, [incidentID, currentTeam?.id]);
 
 	if (loading) {
 		return (

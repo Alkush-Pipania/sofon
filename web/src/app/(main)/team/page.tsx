@@ -41,9 +41,9 @@ import {
 import { get, put, post, del, patch } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
 import { parseApiError } from "@/lib/api-error";
+import { useTeamStore } from "@/store/team-store";
 
 // ── Types ──────────────────────────────────────────────────────
-interface TeamResponse { success: boolean; data: { name: string } }
 interface MemberResponse { success: boolean; data: Member[] }
 interface InvitationsResponse { success: boolean; data: Invitation[] }
 
@@ -91,7 +91,8 @@ function CopyButton({ text }: { text: string }) {
 
 // ── Page ───────────────────────────────────────────────────────
 export default function TeamPage() {
-    const [teamName, setTeamName] = useState("");
+    const { currentTeam, fetchTeams } = useTeamStore();
+
     const [members, setMembers] = useState<Member[]>([]);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [me, setMe] = useState<CurrentUser | null>(null);
@@ -111,16 +112,15 @@ export default function TeamPage() {
     const nameForm = useForm<TeamNameForm>();
 
     const fetchAll = async () => {
+        if (!currentTeam) return;
         setLoading(true);
         try {
-            const [t, m, i, profile] = await Promise.all([
-                get<TeamResponse>(ENDPOINTS.TEAM.GET),
-                get<MemberResponse>(ENDPOINTS.TEAM.MEMBERS),
-                get<InvitationsResponse>(ENDPOINTS.TEAM.INVITATIONS),
+            const [m, i, profile] = await Promise.all([
+                get<MemberResponse>(ENDPOINTS.TEAMS.MEMBERS(currentTeam.id)),
+                get<InvitationsResponse>(ENDPOINTS.TEAMS.INVITATIONS(currentTeam.id)),
                 get<{ success: boolean; data: { id: string; role: string } }>(ENDPOINTS.USERS.ME),
             ]);
-            setTeamName(t.data.name);
-            nameForm.reset({ name: t.data.name });
+            nameForm.reset({ name: currentTeam.name });
             setMembers(m.data ?? []);
             setMe({ id: profile.data.id, role: profile.data.role });
             setInvitations((i.data ?? []).filter((inv) => !inv.accepted));
@@ -131,14 +131,15 @@ export default function TeamPage() {
         }
     };
 
-    useEffect(() => { fetchAll(); }, []);
+    useEffect(() => { fetchAll(); }, [currentTeam?.id]);
 
     const onSaveName = async (data: TeamNameForm) => {
+        if (!currentTeam) return;
         setNameError(null);
         setSavingName(true);
         try {
-            await put(ENDPOINTS.TEAM.UPDATE, { name: data.name });
-            setTeamName(data.name);
+            await put(ENDPOINTS.TEAMS.UPDATE(currentTeam.id), { name: data.name });
+            await fetchTeams();
         } catch (err) {
             setNameError(parseApiError(err, "Failed to update team name."));
         } finally {
@@ -147,10 +148,11 @@ export default function TeamPage() {
     };
 
     const onInvite = async (data: InviteForm) => {
+        if (!currentTeam) return;
         setInviteError(null);
         try {
             const res = await post<{ success: boolean; data: Invitation }>(
-                ENDPOINTS.TEAM.INVITATIONS,
+                ENDPOINTS.TEAMS.INVITATIONS(currentTeam.id),
                 { email: data.email, role: inviteRole },
             );
             setInviteResult(res.data);
@@ -161,11 +163,12 @@ export default function TeamPage() {
         }
     };
 
-    const setMemberActive = async (id: string, active: boolean) => {
-        setUpdatingMember(id);
+    const setMemberActive = async (userId: string, active: boolean) => {
+        if (!currentTeam) return;
+        setUpdatingMember(userId);
         try {
-            await patch(ENDPOINTS.TEAM.SET_MEMBER_ACTIVE(id), { active });
-            setMembers((prev) => prev.map((m) => m.id === id ? { ...m, is_active: active } : m));
+            await patch(ENDPOINTS.TEAMS.SET_MEMBER_ACTIVE(currentTeam.id, userId), { active });
+            setMembers((prev) => prev.map((m) => m.id === userId ? { ...m, is_active: active } : m));
         } catch {
             // ignore
         } finally {
@@ -175,9 +178,10 @@ export default function TeamPage() {
     };
 
     const revokeInvitation = async (id: string) => {
+        if (!currentTeam) return;
         setRevoking(id);
         try {
-            await del(ENDPOINTS.TEAM.REVOKE_INVITATION(id));
+            await del(ENDPOINTS.TEAMS.REVOKE_INVITATION(currentTeam.id, id));
             setInvitations((prev) => prev.filter((i) => i.id !== id));
         } catch {
             // ignore
@@ -185,6 +189,14 @@ export default function TeamPage() {
             setRevoking(null);
         }
     };
+
+    if (!currentTeam) {
+        return (
+            <div className="flex h-64 items-center justify-center text-muted-foreground text-sm">
+                No team selected. Create or join a team first.
+            </div>
+        );
+    }
 
     if (loading) {
         return (
@@ -197,7 +209,7 @@ export default function TeamPage() {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-2xl font-bold tracking-tight">Team</h1>
+                <h1 className="text-2xl font-bold tracking-tight">{currentTeam.name}</h1>
                 <p className="text-sm text-muted-foreground">Manage your team settings and members.</p>
             </div>
 
@@ -245,10 +257,12 @@ export default function TeamPage() {
                                 <CardTitle className="text-base">Members</CardTitle>
                                 <CardDescription>{members.length} member{members.length !== 1 ? "s" : ""}</CardDescription>
                             </div>
-                            <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteOpen(true); }}>
-                                <UserPlus className="h-3.5 w-3.5" />
-                                Invite
-                            </Button>
+                            {(me?.role === "owner" || me?.role === "admin") && (
+                                <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteOpen(true); }}>
+                                    <UserPlus className="h-3.5 w-3.5" />
+                                    Invite
+                                </Button>
+                            )}
                         </CardHeader>
                         <CardContent className="p-0">
                             <Table>
@@ -300,6 +314,7 @@ export default function TeamPage() {
                                                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                                 ) : (
                                                     me?.id !== m.id &&
+                                                    (me?.role === "owner" || me?.role === "admin") &&
                                                     !(m.role === "owner" && me?.role !== "owner") && (
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
@@ -317,9 +332,7 @@ export default function TeamPage() {
                                                                         Deactivate
                                                                     </DropdownMenuItem>
                                                                 ) : (
-                                                                    <DropdownMenuItem
-                                                                        onClick={() => setMemberActive(m.id, true)}
-                                                                    >
+                                                                    <DropdownMenuItem onClick={() => setMemberActive(m.id, true)}>
                                                                         <UserCheck className="mr-2 h-3.5 w-3.5" />
                                                                         Activate
                                                                     </DropdownMenuItem>
@@ -341,7 +354,7 @@ export default function TeamPage() {
                         <Card>
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base">Pending invitations</CardTitle>
-                                <CardDescription>Invitations that haven't been accepted yet.</CardDescription>
+                                <CardDescription>Invitations that haven&apos;t been accepted yet.</CardDescription>
                             </CardHeader>
                             <CardContent className="p-0">
                                 <Table>
@@ -400,7 +413,7 @@ export default function TeamPage() {
                         <DialogTitle>Deactivate member?</DialogTitle>
                         <DialogDescription>
                             <span className="font-medium text-foreground">{confirmMember?.name}</span>
-                            {" "}will lose access immediately. Their data is preserved and you can reactivate them later.
+                            {" "}will lose access to this team immediately. Their data is preserved and you can reactivate them later.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>

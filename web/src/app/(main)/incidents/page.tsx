@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { get } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
+import { useTeamStore } from "@/store/team-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +79,7 @@ function toISODateEnd(date: string): string {
 }
 
 export default function IncidentsPage() {
+	const currentTeam = useTeamStore((s) => s.currentTeam);
 	const [incidents, setIncidents] = useState<Incident[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export default function IncidentsPage() {
 	const [hasMore, setHasMore] = useState(false);
 
 	const fetchIncidents = async (cursorValue: string | null, filters: AppliedFilters) => {
+		if (!currentTeam) return;
 		setLoading(true);
 		setError(null);
 		try {
@@ -102,7 +105,7 @@ export default function IncidentsPage() {
 			if (filters.toDate) params.set("to", toISODateEnd(filters.toDate));
 			if (cursorValue) params.set("cursor", cursorValue);
 
-			const res = await get<IncidentListResponse>(`${ENDPOINTS.INCIDENTS.LIST}?${params.toString()}`);
+			const res = await get<IncidentListResponse>(`${ENDPOINTS.INCIDENTS.LIST(currentTeam.id)}?${params.toString()}`);
 
 			setIncidents(res.data.incidents ?? []);
 			setHasMore(res.data.has_more ?? false);
@@ -117,7 +120,8 @@ export default function IncidentsPage() {
 
 	useEffect(() => {
 		fetchIncidents(cursor, appliedFilters);
-	}, [cursor, appliedFilters]);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [cursor, appliedFilters, currentTeam?.id]);
 
 	const currentActive = useMemo(() => incidents.filter((i) => i.is_active).length, [incidents]);
 

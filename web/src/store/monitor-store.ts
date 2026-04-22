@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { get, post, patch as patchReq, del } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
+import { useTeamStore } from "@/store/team-store";
 
 // ── Types ───────────────────────────────────────────
 export interface Monitor {
@@ -18,7 +19,7 @@ interface MonitorsResponse {
     success: boolean;
     message: string;
     data: {
-        user_id: string;
+        team_id: string;
         limit: number;
         offset: number;
         monitors: Monitor[];
@@ -60,6 +61,10 @@ interface MonitorState {
     setOffset: (offset: number) => void;
 }
 
+function currentTeamId(): string | null {
+    return useTeamStore.getState().currentTeam?.id ?? null;
+}
+
 export const useMonitorStore = create<MonitorState>((set, getState) => ({
     monitors: [],
     totalCount: 0,
@@ -71,6 +76,9 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
     error: null,
 
     fetchMonitors: async (offset?: number, limit?: number) => {
+        const teamId = currentTeamId();
+        if (!teamId) return;
+
         const state = getState();
         const o = offset ?? state.offset;
         const l = limit ?? state.limit;
@@ -79,12 +87,12 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
 
         try {
             const res = await get<MonitorsResponse>(
-                `${ENDPOINTS.MONITORS.LIST}?offset=${o}&limit=${l}`,
+                `${ENDPOINTS.MONITORS.LIST(teamId)}?offset=${o}&limit=${l}`,
             );
 
             set({
                 monitors: res.data.monitors ?? [],
-                totalCount: res.data.monitors?.length ?? 0, // backend doesn't return total yet, use array length
+                totalCount: res.data.monitors?.length ?? 0,
                 offset: o,
                 limit: l,
                 loading: false,
@@ -97,27 +105,32 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
     },
 
     createMonitor: async (data: CreateMonitorRequest) => {
+        const teamId = currentTeamId();
+        if (!teamId) throw new Error("No team selected");
+
         set({ creating: true, error: null });
 
         try {
-            await post<CreateMonitorResponse>(ENDPOINTS.MONITORS.CREATE, data);
+            await post<CreateMonitorResponse>(ENDPOINTS.MONITORS.CREATE(teamId), data);
             set({ creating: false });
-            // Refresh the list
             await getState().fetchMonitors();
         } catch (err: unknown) {
             const message =
                 err instanceof Error ? err.message : "Failed to create monitor";
             set({ creating: false, error: message });
-            throw err; // re-throw so the dialog can show the error
+            throw err;
         }
     },
 
     updateMonitorStatus: async (monitorID: string, enable: boolean) => {
+        const teamId = currentTeamId();
+        if (!teamId) throw new Error("No team selected");
+
         set({ updatingMonitorId: monitorID, error: null });
 
         try {
             await patchReq<{ success: boolean; message: string; data: string }>(
-                ENDPOINTS.MONITORS.UPDATE(monitorID),
+                ENDPOINTS.MONITORS.UPDATE(teamId, monitorID),
                 { enable },
             );
 
@@ -136,11 +149,14 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
     },
 
     deleteMonitor: async (monitorID: string) => {
+        const teamId = currentTeamId();
+        if (!teamId) throw new Error("No team selected");
+
         set({ updatingMonitorId: monitorID, error: null });
 
         try {
             await del<{ success: boolean; message: string }>(
-                ENDPOINTS.MONITORS.DELETE(monitorID),
+                ENDPOINTS.MONITORS.DELETE(teamId, monitorID),
             );
 
             set((state) => ({

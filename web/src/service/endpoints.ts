@@ -20,30 +20,32 @@ export const ENDPOINTS = {
         CHANGE_PASSWORD: "/api/v1/users/change-password",
     },
 
-    // ── Monitors ──────────────────────────────────────
+    // ── Teams ─────────────────────────────────────────
+    TEAMS: {
+        LIST: "/api/v1/teams",
+        CREATE: "/api/v1/teams",
+        GET: (teamId: string) => `/api/v1/teams/${teamId}`,
+        UPDATE: (teamId: string) => `/api/v1/teams/${teamId}`,
+        MEMBERS: (teamId: string) => `/api/v1/teams/${teamId}/members`,
+        SET_MEMBER_ACTIVE: (teamId: string, userId: string) => `/api/v1/teams/${teamId}/members/${userId}`,
+        INVITATIONS: (teamId: string) => `/api/v1/teams/${teamId}/invitations`,
+        REVOKE_INVITATION: (teamId: string, invId: string) => `/api/v1/teams/${teamId}/invitations/${invId}`,
+        INVITATION_BY_TOKEN: (token: string) => `/api/v1/teams/invitations/${token}`,
+        ACCEPT_INVITATION: "/api/v1/teams/invitations/accept",
+    },
+
+    // ── Monitors (team-scoped) ─────────────────────────
     MONITORS: {
-        LIST: "/api/v1/monitors",
-        CREATE: "/api/v1/monitors",
-        GET: (id: string) => `/api/v1/monitors/${id}`,
-        UPDATE: (id: string) => `/api/v1/monitors/${id}`,
-        DELETE: (id: string) => `/api/v1/monitors/${id}`,
+        LIST: (teamId: string) => `/api/v1/teams/${teamId}/monitors`,
+        CREATE: (teamId: string) => `/api/v1/teams/${teamId}/monitors`,
+        GET: (teamId: string, id: string) => `/api/v1/teams/${teamId}/monitors/${id}`,
+        UPDATE: (teamId: string, id: string) => `/api/v1/teams/${teamId}/monitors/${id}`,
+        DELETE: (teamId: string, id: string) => `/api/v1/teams/${teamId}/monitors/${id}`,
     },
 
-    // ── Incidents ─────────────────────────────────────
+    // ── Incidents (team-scoped) ────────────────────────
     INCIDENTS: {
-        LIST: "/api/v1/incidents",
-        GET: (id: string) => `/api/v1/incidents/${id}`,
-    },
-
-    // ── Team ──────────────────────────────────────────
-    TEAM: {
-        GET: "/api/v1/team",
-        UPDATE: "/api/v1/team",
-        MEMBERS: "/api/v1/team/members",
-        INVITATIONS: "/api/v1/team/invitations",
-        INVITATION_BY_TOKEN: (token: string) => `/api/v1/team/invitations/${token}`,
-        REVOKE_INVITATION: (id: string) => `/api/v1/team/invitations/${id}`,
-        SET_MEMBER_ACTIVE: (id: string) => `/api/v1/team/members/${id}`,
-        ACCEPT_INVITATION: "/api/v1/team/invitations/accept",
+        LIST: (teamId: string) => `/api/v1/teams/${teamId}/incidents`,
+        GET: (teamId: string, id: string) => `/api/v1/teams/${teamId}/incidents/${id}`,
     },
 } as const;
