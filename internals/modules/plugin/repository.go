@@ -77,6 +77,35 @@ func (r *Repository) Get(ctx context.Context, teamID uuid.UUID, pluginType Plugi
 	return rowToPlugin(row), configMap, nil
 }
 
+// GetZendutyConfig satisfies the alert.PluginConfigGetter interface.
+func (r *Repository) GetZendutyConfig(ctx context.Context, teamID uuid.UUID) (alert.ZendutyConfig, bool, error) {
+	const op = "repo.plugin.get_zenduty_config"
+
+	row, err := r.querier.GetPlugin(ctx, db.GetPluginParams{
+		TeamID:     utils.ToPgUUID(teamID),
+		PluginType: string(PluginTypeZenduty),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return alert.ZendutyConfig{}, false, nil
+		}
+		return alert.ZendutyConfig{}, false, utils.WrapRepoError(op, err, r.log)
+	}
+
+	if !row.Enabled {
+		return alert.ZendutyConfig{}, false, nil
+	}
+
+	configMap, err := r.decrypt(row.ConfigEnc, op)
+	if err != nil {
+		return alert.ZendutyConfig{}, false, err
+	}
+
+	return alert.ZendutyConfig{
+		IntegrationURL: configMap["integration_url"],
+	}, true, nil
+}
+
 // GetResendConfig is called by the alert service at send-time.
 // It satisfies the alert.PluginConfigGetter interface.
 func (r *Repository) GetResendConfig(ctx context.Context, teamID uuid.UUID) (alert.ResendEmailConfig, bool, error) {

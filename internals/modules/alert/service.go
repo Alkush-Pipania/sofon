@@ -10,6 +10,7 @@ import (
 
 	"github.com/alkush-pipania/sofon/config"
 	resendpkg "github.com/alkush-pipania/sofon/pkg/redis/resend"
+	"github.com/alkush-pipania/sofon/pkg/zenduty"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -19,6 +20,7 @@ import (
 // Defined here to avoid importing the plugin package from alert.
 type PluginConfigGetter interface {
 	GetResendConfig(ctx context.Context, teamID uuid.UUID) (ResendEmailConfig, bool, error)
+	GetZendutyConfig(ctx context.Context, teamID uuid.UUID) (ZendutyConfig, bool, error)
 }
 
 // ResendEmailConfig holds only what the alert service needs from a Resend plugin.
@@ -31,6 +33,8 @@ type ResendEmailConfig struct {
 type PluginCacheClient interface {
 	GetCachedResendConfig(ctx context.Context, teamID uuid.UUID) (ResendEmailConfig, bool)
 	SetCachedResendConfig(ctx context.Context, teamID uuid.UUID, cfg ResendEmailConfig, ttl time.Duration) error
+	GetCachedZendutyConfig(ctx context.Context, teamID uuid.UUID) (ZendutyConfig, bool)
+	SetCachedZendutyConfig(ctx context.Context, teamID uuid.UUID, cfg ZendutyConfig, ttl time.Duration) error
 }
 
 type AlertService struct {
@@ -85,20 +89,25 @@ func (s *AlertService) processAlert(event AlertEvent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Load Resend config from cache → DB
+	// Fan out to all configured plugins independently.
+	s.handleResend(ctx, event)
+	s.handleZenduty(ctx, event)
+}
+
+func (s *AlertService) handleResend(ctx context.Context, event AlertEvent) {
 	resendCfg, ok := s.redisCache.GetCachedResendConfig(ctx, event.TeamID)
 	if !ok {
 		dbCfg, found, err := s.pluginRepo.GetResendConfig(ctx, event.TeamID)
 		if err != nil {
-			s.logger.Error().Err(err).Str("team_id", event.TeamID.String()).Msg("failed to load resend plugin config")
+			s.logger.Error().Err(err).Str("team_id", event.TeamID.String()).Msg("resend: failed to load plugin config")
 			_ = s.persistAlert(event.IncidentID, "", "failed", time.Time{})
 			return
 		}
 		if !found {
-			s.logger.Warn().
+			s.logger.Debug().
 				Str("incident_id", event.IncidentID.String()).
 				Str("team_id", event.TeamID.String()).
-				Msg("skipping alert: resend plugin not configured or disabled")
+				Msg("resend: plugin not configured or disabled, skipping")
 			_ = s.persistAlert(event.IncidentID, "", "skipped_no_plugin", time.Time{})
 			return
 		}
@@ -111,7 +120,7 @@ func (s *AlertService) processAlert(event AlertEvent) {
 		recipient = resendCfg.SenderEmail
 	}
 	if recipient == "" {
-		s.logger.Error().Str("incident_id", event.IncidentID.String()).Msg("skipping alert: no recipient email")
+		s.logger.Error().Str("incident_id", event.IncidentID.String()).Msg("resend: no recipient email, skipping")
 		_ = s.persistAlert(event.IncidentID, "", "failed", time.Time{})
 		return
 	}
@@ -126,16 +135,77 @@ func (s *AlertService) processAlert(event AlertEvent) {
 		s.logger.Error().Err(err).
 			Str("incident_id", event.IncidentID.String()).
 			Str("recipient", recipient).
-			Msg("failed to send incident email")
+			Msg("resend: failed to send incident email")
 	} else {
 		s.logger.Info().
 			Str("incident_id", event.IncidentID.String()).
 			Str("recipient", recipient).
 			Str("resend_email_id", resendID).
-			Msg("incident email sent")
+			Msg("resend: incident email sent")
 	}
 
 	_ = s.persistAlert(event.IncidentID, recipient, status, sentAt)
+}
+
+func (s *AlertService) handleZenduty(ctx context.Context, event AlertEvent) {
+	cfg, ok := s.redisCache.GetCachedZendutyConfig(ctx, event.TeamID)
+	if !ok {
+		dbCfg, found, err := s.pluginRepo.GetZendutyConfig(ctx, event.TeamID)
+		if err != nil {
+			s.logger.Error().Err(err).Str("team_id", event.TeamID.String()).Msg("zenduty: failed to load plugin config")
+			return
+		}
+		if !found {
+			s.logger.Debug().
+				Str("incident_id", event.IncidentID.String()).
+				Str("team_id", event.TeamID.String()).
+				Msg("zenduty: plugin not configured or disabled, skipping")
+			return
+		}
+		cfg = dbCfg
+		_ = s.redisCache.SetCachedZendutyConfig(ctx, event.TeamID, cfg, 5*time.Minute)
+	}
+
+	alertType := zenduty.AlertTypeCritical
+	message := fmt.Sprintf("%s is DOWN", event.MonitorURL)
+	summary := event.Reason
+	if event.Type == AlertTypeRecovered {
+		alertType = zenduty.AlertTypeResolved
+		message = fmt.Sprintf("%s is UP", event.MonitorURL)
+		summary = "Monitor has recovered and is responding normally"
+	}
+
+	req := &zenduty.EventRequest{
+		AlertType: alertType,
+		Message:   message,
+		Summary:   summary,
+		EntityID:  event.MonitorID.String(),
+		Payload: map[string]string{
+			"status_code": fmt.Sprintf("%d", event.StatusCode),
+			"monitor_url": event.MonitorURL,
+			"latency_ms":  fmt.Sprintf("%d", event.LatencyMs),
+			"incident_id": event.IncidentID.String(),
+		},
+		URLs: []zenduty.EventURL{
+			{LinkURL: event.MonitorURL, LinkText: "Affected URL"},
+		},
+	}
+
+	client := zenduty.NewClient(cfg.IntegrationURL)
+	resp, err := client.SendEvent(ctx, req)
+	if err != nil {
+		s.logger.Error().Err(err).
+			Str("incident_id", event.IncidentID.String()).
+			Str("alert_type", string(alertType)).
+			Msg("zenduty: failed to send event")
+		return
+	}
+
+	s.logger.Info().
+		Str("incident_id", event.IncidentID.String()).
+		Str("alert_type", string(alertType)).
+		Str("trace_id", resp.TraceID).
+		Msg("zenduty: event sent successfully")
 }
 
 func (s *AlertService) sendAlertEmail(cfg ResendEmailConfig, event AlertEvent, recipient string) (string, error) {

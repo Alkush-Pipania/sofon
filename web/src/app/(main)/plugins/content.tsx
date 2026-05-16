@@ -15,7 +15,7 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import {
-    AlertCircle, Check, ChevronRight, Loader2, Mail, Settings, Trash2,
+    AlertCircle, BellRing, Check, ChevronRight, Loader2, Mail, Settings, Trash2,
 } from "lucide-react";
 
 // ── Plugin registry (add future plugins here) ─────────────────────────────
@@ -47,6 +47,20 @@ const PLUGIN_REGISTRY: PluginDef[] = [
                 placeholder: "alerts@yourdomain.com",
                 type: "email",
                 hint: "Must be a verified sender in your Resend account.",
+            },
+        ],
+    },
+    {
+        type: "zenduty",
+        name: "Zenduty",
+        description: "Create and auto-resolve Zenduty incidents when monitors go down.",
+        icon: BellRing,
+        fields: [
+            {
+                key: "integration_url",
+                label: "Integration Webhook URL",
+                placeholder: "https://events.zenduty.com/integration/.../generic/.../",
+                hint: "Found in Zenduty → Service → Integrations → Generic Integration → Configure.",
             },
         ],
     },

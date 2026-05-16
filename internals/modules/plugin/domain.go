@@ -9,7 +9,8 @@ import (
 type PluginType string
 
 const (
-	PluginTypeResend PluginType = "resend"
+	PluginTypeResend  PluginType = "resend"
+	PluginTypeZenduty PluginType = "zenduty"
 )
 
 type Plugin struct {
