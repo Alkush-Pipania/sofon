@@ -47,10 +47,10 @@ export type { Monitor };
 
 interface MonitorsTableProps {
     monitors: Monitor[];
-    limit: number;
-    offset: number;
-    totalCount?: number;
-    onPageChange?: (newOffset: number) => void;
+    hasMore: boolean;
+    hasPrev: boolean;
+    onNext?: () => void;
+    onPrev?: () => void;
     onToggleStatus?: (monitorID: string, enable: boolean) => Promise<void>;
     onDelete?: (monitorID: string) => Promise<void>;
     updatingMonitorId?: string | null;
@@ -73,10 +73,10 @@ function formatInterval(sec: number) {
 
 export function MonitorsTable({
     monitors,
-    limit,
-    offset,
-    totalCount,
-    onPageChange,
+    hasMore,
+    hasPrev,
+    onNext,
+    onPrev,
     onToggleStatus,
     onDelete,
     updatingMonitorId,
@@ -84,13 +84,6 @@ export function MonitorsTable({
     const [toggleConfirmOpen, setToggleConfirmOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | null>(null);
-
-    const currentPage = Math.floor(offset / limit) + 1;
-    const total = totalCount ?? monitors.length;
-    const totalPages = Math.max(1, Math.ceil(total / limit));
-
-    const hasPrev = offset > 0;
-    const hasNext = offset + limit < total;
 
     return (
         <div className="space-y-4">
@@ -138,7 +131,26 @@ export function MonitorsTable({
 
                                     {/* Status */}
                                     <TableCell className="text-center">
-                                        {m.enabled ? (
+                                        {!m.enabled ? (
+                                            <Badge
+                                                variant="outline"
+                                                className="gap-1.5 border-zinc-500/30 bg-zinc-500/10 text-zinc-500 dark:text-zinc-400"
+                                            >
+                                                <CircleX className="h-3 w-3" />
+                                                Paused
+                                            </Badge>
+                                        ) : m.is_down ? (
+                                            <Badge
+                                                variant="outline"
+                                                className="gap-1.5 border-red-500/30 bg-red-500/10 text-red-500"
+                                            >
+                                                <span className="relative flex h-2 w-2">
+                                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+                                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                                                </span>
+                                                Down
+                                            </Badge>
+                                        ) : (
                                             <Badge
                                                 variant="outline"
                                                 className="gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -148,14 +160,6 @@ export function MonitorsTable({
                                                     <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                                                 </span>
                                                 Active
-                                            </Badge>
-                                        ) : (
-                                            <Badge
-                                                variant="outline"
-                                                className="gap-1.5 border-zinc-500/30 bg-zinc-500/10 text-zinc-500 dark:text-zinc-400"
-                                            >
-                                                <CircleX className="h-3 w-3" />
-                                                Paused
                                             </Badge>
                                         )}
                                     </TableCell>
@@ -226,48 +230,41 @@ export function MonitorsTable({
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between px-1">
-                <p className="text-sm text-muted-foreground">
-                    Showing{" "}
-                    <span className="font-medium text-foreground">
-                        {monitors.length === 0 ? 0 : offset + 1}
-                    </span>
-                    –
-                    <span className="font-medium text-foreground">
-                        {Math.min(offset + limit, total)}
-                    </span>{" "}
-                    of{" "}
-                    <span className="font-medium text-foreground">{total}</span>
-                </p>
+            {(hasPrev || hasMore) && (
+                <div className="flex items-center justify-between px-1">
+                    <p className="text-sm text-muted-foreground">
+                        Showing{" "}
+                        <span className="font-medium text-foreground">
+                            {monitors.length}
+                        </span>{" "}
+                        monitor{monitors.length !== 1 ? "s" : ""}
+                    </p>
 
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!hasPrev}
-                        onClick={() => onPageChange?.(Math.max(0, offset - limit))}
-                        className="h-8 gap-1 px-2.5"
-                    >
-                        <ChevronLeft className="h-4 w-4" />
-                        Prev
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!hasPrev}
+                            onClick={onPrev}
+                            className="h-8 gap-1 px-2.5"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                            Prev
+                        </Button>
 
-                    <span className="text-sm text-muted-foreground">
-                        Page {currentPage} of {totalPages}
-                    </span>
-
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!hasNext}
-                        onClick={() => onPageChange?.(offset + limit)}
-                        className="h-8 gap-1 px-2.5"
-                    >
-                        Next
-                        <ChevronRight className="h-4 w-4" />
-                    </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!hasMore}
+                            onClick={onNext}
+                            className="h-8 gap-1 px-2.5"
+                        >
+                            Next
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Toggle confirm dialog */}
             <Dialog open={toggleConfirmOpen} onOpenChange={setToggleConfirmOpen}>

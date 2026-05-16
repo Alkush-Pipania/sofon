@@ -13,6 +13,12 @@ type User struct {
 	IsPaidUser    bool
 }
 
+// UserTeam is a lightweight team summary returned inside the profile response.
+type UserTeam struct {
+	ID   uuid.UUID
+	Name string
+}
+
 type CreateUserCmd struct {
 	Name         string
 	Email        string

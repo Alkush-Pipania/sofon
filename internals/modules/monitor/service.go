@@ -88,12 +88,34 @@ func (s *Service) LoadMonitor(ctx context.Context, monitorID uuid.UUID) (Monitor
 	return mDB, nil
 }
 
-func (s *Service) GetAllMonitors(ctx context.Context, teamID uuid.UUID, limit int32, offset int32) ([]Monitor, error) {
-	m, err := s.monitorRepo.GetAll(ctx, teamID, limit, offset)
+func (s *Service) GetAllMonitors(ctx context.Context, teamID uuid.UUID, opts ListMonitorsOptions) (ListMonitorsPage, error) {
+	const op = "service.monitor.get_all_monitors"
+
+	monitors, hasMore, err := s.monitorRepo.GetAll(ctx, teamID, opts)
 	if err != nil {
-		return []Monitor{}, err
+		return ListMonitorsPage{}, err
 	}
-	return m, nil
+
+	var nextCursor *string
+	if hasMore && len(monitors) > 0 {
+		last := monitors[len(monitors)-1]
+		encoded, err := EncodeCursor(Cursor{
+			CreatedAt: last.CreatedAt,
+			MonitorID: last.ID.String(),
+		})
+		if err != nil {
+			s.logger.Error().Str("op", op).Err(err).Msg("failed to encode monitor cursor")
+		} else {
+			nextCursor = &encoded
+		}
+	}
+
+	return ListMonitorsPage{
+		Monitors:   monitors,
+		HasMore:    hasMore,
+		NextCursor: nextCursor,
+		Limit:      opts.Limit,
+	}, nil
 }
 
 func (s *Service) UpdateMonitorStatus(ctx context.Context, teamID, monitorID uuid.UUID, enable bool) (bool, error) {
@@ -115,6 +137,9 @@ func (s *Service) UpdateMonitorStatus(ctx context.Context, teamID, monitorID uui
 	if enable {
 		s.ScheduleMonitor(ctx, m.ID, m.IntervalSec, op)
 	} else {
+		if err := s.monitorRepo.CloseOpenIncident(ctx, monitorID); err != nil {
+			s.logger.Error().Str("op", op).Err(err).Msg("failed to close open incident on disable")
+		}
 		s.disableMonitor(ctx, monitorID)
 	}
 

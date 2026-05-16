@@ -82,6 +82,7 @@ func (rp *ResultProcessor) handleSuccess(r executor.HTTPResult) {
 				IncidentID: closedIncidentID,
 				Type:       alert.AlertTypeRecovered,
 				MonitorID:  r.MonitorID,
+				TeamID:     r.TeamID,
 				MonitorURL: r.MonitorURL,
 				AlertEmail: r.AlertEmail,
 				Reason:     "RECOVERED",

@@ -127,37 +127,39 @@ func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
-
-	limit, err := strconv.ParseInt(limitStr, 10, 32)
-	if err != nil {
-		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
-		return
-	}
-	offset, err := strconv.ParseInt(offsetStr, 10, 32)
-	if err != nil {
-		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid input")
-		return
+	limit := int32(10)
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		l, err := strconv.ParseInt(limitStr, 10, 32)
+		if err != nil || l <= 0 || l > 100 {
+			utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid limit")
+			return
+		}
+		limit = int32(l)
 	}
 
-	if limit <= 0 {
-		limit = 10
-	}
-	if offset < 0 {
-		offset = 0
+	var cursor *Cursor
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		decoded, err := DecodeCursor(cursorStr)
+		if err != nil {
+			utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid cursor")
+			return
+		}
+		cursor = decoded
 	}
 
-	monitors, err := h.service.GetAllMonitors(ctx, tm.TeamID, int32(limit), int32(offset))
+	page, err := h.service.GetAllMonitors(ctx, tm.TeamID, ListMonitorsOptions{
+		Limit:  limit,
+		Cursor: cursor,
+	})
 	if err != nil {
 		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("retrieving all monitors error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
 
-	m := make([]GetMonitorResponse, 0, len(monitors))
-	for i := range monitors {
-		mon := &monitors[i]
+	m := make([]GetMonitorResponse, 0, len(page.Monitors))
+	for i := range page.Monitors {
+		mon := &page.Monitors[i]
 		m = append(m, GetMonitorResponse{
 			ID:                 mon.ID.String(),
 			Url:                mon.Url,
@@ -167,14 +169,15 @@ func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 			ExpectedStatus:     mon.ExpectedStatus,
 			Enabled:            mon.Enabled,
 			AlertEmail:         mon.AlertEmail,
+			IsDown:             mon.IsDown,
 		})
 	}
 
-	utils.WriteJSON(w, http.StatusOK, reqID, "monitors retrieved", GetAllMonitorsResponse{
-		TeamID:   tm.TeamID.String(),
-		Limit:    int32(limit),
-		Offset:   int32(offset),
-		Monitors: m,
+	utils.WriteJSON(w, http.StatusOK, reqID, "monitors retrieved", ListMonitorsResponse{
+		Limit:      page.Limit,
+		HasMore:    page.HasMore,
+		NextCursor: page.NextCursor,
+		Monitors:   m,
 	})
 }
 

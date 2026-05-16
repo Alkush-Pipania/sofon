@@ -285,6 +285,18 @@ func (r *repository) CreateUser(ctx context.Context, email, name, passwordHash, 
 	return utils.FromPgUUID(id), nil
 }
 
+func (r *repository) IsMember(ctx context.Context, teamID, userID uuid.UUID) (bool, error) {
+	const op = "repo.team.is_member"
+	is, err := r.querier.UserIsMember(ctx, db.UserIsMemberParams{
+		TeamID: utils.ToPgUUID(teamID),
+		UserID: utils.ToPgUUID(userID),
+	})
+	if err != nil {
+		return false, utils.WrapRepoError(op, err, r.logger)
+	}
+	return is, nil
+}
+
 func (r *repository) GetUserByEmail(ctx context.Context, email string) (uuid.UUID, bool, error) {
 	const op = "repo.team.get_user_by_email"
 

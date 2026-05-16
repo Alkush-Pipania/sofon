@@ -17,6 +17,7 @@ type AlertEvent struct {
 	IncidentID uuid.UUID
 	Type       AlertType
 	MonitorID  uuid.UUID
+	TeamID     uuid.UUID
 	MonitorURL string
 	AlertEmail string
 	Reason     string

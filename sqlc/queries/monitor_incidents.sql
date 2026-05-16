@@ -29,7 +29,9 @@ SELECT
     EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
     COALESCE(a.status, '') AS alert_status,
     COALESCE(a.alert_email, '') AS alert_email,
-    a.sent_at AS alert_sent_at
+    a.sent_at AS alert_sent_at,
+    m.expected_status,
+    m.latency_threshold_ms
 FROM monitor_incidents mi
 JOIN monitors m ON m.id = mi.monitor_id
 LEFT JOIN LATERAL (
@@ -71,7 +73,9 @@ SELECT
     EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
     COALESCE(a.status, '') AS alert_status,
     COALESCE(a.alert_email, '') AS alert_email,
-    a.sent_at AS alert_sent_at
+    a.sent_at AS alert_sent_at,
+    m.expected_status,
+    m.latency_threshold_ms
 FROM monitor_incidents mi
 JOIN monitors m ON m.id = mi.monitor_id
 LEFT JOIN LATERAL (

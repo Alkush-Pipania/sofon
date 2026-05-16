@@ -1,6 +1,7 @@
 package incident
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -179,6 +180,25 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, reqID, "incident retrieved", toIncidentResponse(&inc))
 }
 
+func deriveReason(i *Incident) string {
+	if i.HTTPStatus == 0 {
+		return "No response (timeout or connection failure)"
+	}
+	statusMismatch := i.ExpectedStatus > 0 && i.HTTPStatus != i.ExpectedStatus
+	latencyBreach := i.LatencyThresholdMs > 0 && i.LatencyMs > i.LatencyThresholdMs
+	switch {
+	case statusMismatch && latencyBreach:
+		return fmt.Sprintf("Status mismatch (got %d, expected %d) and latency threshold exceeded (%dms > %dms)",
+			i.HTTPStatus, i.ExpectedStatus, i.LatencyMs, i.LatencyThresholdMs)
+	case statusMismatch:
+		return fmt.Sprintf("Unexpected status code (got %d, expected %d)", i.HTTPStatus, i.ExpectedStatus)
+	case latencyBreach:
+		return fmt.Sprintf("Latency threshold exceeded (%dms > %dms)", i.LatencyMs, i.LatencyThresholdMs)
+	default:
+		return fmt.Sprintf("Unexpected status code (%d)", i.HTTPStatus)
+	}
+}
+
 func toIncidentResponse(i *Incident) IncidentResponse {
 	start := i.StartTime.UTC().Format(time.RFC3339)
 	created := i.CreatedAt.UTC().Format(time.RFC3339)
@@ -215,6 +235,7 @@ func toIncidentResponse(i *Incident) IncidentResponse {
 		CreatedAt:   created,
 		IsActive:    i.IsActive,
 		DurationSec: i.DurationSec,
+		Reason:      deriveReason(i),
 		LatestAlert: latestAlert,
 	}
 }

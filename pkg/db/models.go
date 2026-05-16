@@ -60,6 +60,16 @@ type MonitorIncident struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
+type Plugin struct {
+	ID         pgtype.UUID
+	TeamID     pgtype.UUID
+	PluginType string
+	Enabled    bool
+	ConfigEnc  string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type Team struct {
 	ID        pgtype.UUID
 	Name      string

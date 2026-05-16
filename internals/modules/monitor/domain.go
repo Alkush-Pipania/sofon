@@ -28,6 +28,25 @@ type Monitor struct {
 	LatencyThresholdMs *int32
 	ExpectedStatus     *int32
 	Enabled            bool
+	CreatedAt          time.Time
+	IsDown             bool
+}
+
+type Cursor struct {
+	CreatedAt time.Time
+	MonitorID string
+}
+
+type ListMonitorsOptions struct {
+	Limit  int32
+	Cursor *Cursor
+}
+
+type ListMonitorsPage struct {
+	Monitors   []Monitor
+	HasMore    bool
+	NextCursor *string
+	Limit      int32
 }
 
 type MonitorRecord struct {

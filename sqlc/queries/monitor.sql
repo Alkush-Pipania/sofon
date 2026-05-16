@@ -30,13 +30,21 @@ SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latenc
 FROM monitors
 WHERE id = $1 AND team_id = $2;
 
--- name: GetAllMonitorsByTeamID :many
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
+-- name: ListMonitorsByTeamCursor :many
+SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec,
+       latency_threshold_ms, expected_status, enabled, created_at,
+       EXISTS (
+           SELECT 1 FROM monitor_incidents mi
+           WHERE mi.monitor_id = monitors.id AND mi.end_time IS NULL
+       ) AS is_down
 FROM monitors
 WHERE team_id = $1
-ORDER BY updated_at
-    LIMIT $2
-OFFSET $3;
+  AND (
+    $2::timestamptz IS NULL
+    OR (created_at, id) < ($2::timestamptz, $3::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
 
 -- name: UpdateMonitorStatus :execrows
 UPDATE monitors

@@ -11,7 +11,7 @@ WHERE token = $1;
 -- name: ListInvitations :many
 SELECT id, team_id, email, role, token, expires_at, accepted_at, invited_by, created_at
 FROM invitations
-WHERE team_id = $1 AND accepted_at IS NULL
+WHERE team_id = $1 AND accepted_at IS NULL AND expires_at > now()
 ORDER BY created_at DESC;
 
 -- name: AcceptInvitation :exec

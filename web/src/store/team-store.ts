@@ -5,7 +5,7 @@ import { ENDPOINTS } from "@/service/endpoints";
 export interface Team {
     id: string;
     name: string;
-    created_at: string;
+    created_at?: string;
 }
 
 interface TeamsResponse {
@@ -24,6 +24,8 @@ interface TeamStore {
     teams: Team[];
     currentTeam: Team | null;
     loading: boolean;
+    // Seed teams directly from the profile response (no extra API call)
+    seedTeams: (teams: Team[]) => void;
     setCurrentTeam: (team: Team) => void;
     fetchTeams: () => Promise<void>;
     createTeam: (name: string) => Promise<Team>;
@@ -33,6 +35,16 @@ export const useTeamStore = create<TeamStore>((set, getState) => ({
     teams: [],
     currentTeam: null,
     loading: false,
+
+    seedTeams: (teams: Team[]) => {
+        const savedId = localStorage.getItem(CURRENT_TEAM_KEY);
+        const saved = teams.find((t) => t.id === savedId);
+        const current = saved ?? teams[0] ?? null;
+        if (current) {
+            localStorage.setItem(CURRENT_TEAM_KEY, current.id);
+        }
+        set({ teams, currentTeam: current });
+    },
 
     setCurrentTeam: (team: Team) => {
         localStorage.setItem(CURRENT_TEAM_KEY, team.id);
@@ -62,8 +74,13 @@ export const useTeamStore = create<TeamStore>((set, getState) => ({
     createTeam: async (name: string) => {
         const res = await post<CreateTeamResponse>(ENDPOINTS.TEAMS.CREATE, { name });
         const team = res.data;
-        set((state) => ({ teams: [...state.teams, team], currentTeam: team }));
+        set((state) => ({
+            teams: [...state.teams, team],
+            currentTeam: state.currentTeam ?? team,
+        }));
         localStorage.setItem(CURRENT_TEAM_KEY, team.id);
+        // Refresh full team list from server to get created_at etc.
+        getState().fetchTeams();
         return team;
     },
 }));

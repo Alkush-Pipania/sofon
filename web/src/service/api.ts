@@ -2,17 +2,36 @@ import axios, { AxiosError, type AxiosRequestConfig } from "axios";
 import { env } from "@/lib/env";
 
 // ── Token helpers ───────────────────────────────────
+// Token lives in both localStorage (for JS reads) and a cookie (for middleware reads).
 const TOKEN_KEY = "sofon_token";
+
+// Cookie is HttpOnly=false so JS can write it, but Secure + SameSite=Lax for safety.
+// Max-age matches the backend JWT TTL (30 min). Middleware reads this cookie.
+function setCookie(value: string) {
+    if (typeof document === "undefined") return;
+    document.cookie = `${TOKEN_KEY}=${value}; path=/; max-age=1800; SameSite=Lax`;
+}
+
+function clearCookie() {
+    if (typeof document === "undefined") return;
+    document.cookie = `${TOKEN_KEY}=; path=/; max-age=0; SameSite=Lax`;
+}
 
 export const tokenStore = {
     get: (): string | null =>
         typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null,
 
-    set: (token: string) =>
-        typeof window !== "undefined" && localStorage.setItem(TOKEN_KEY, token),
+    set: (token: string) => {
+        if (typeof window === "undefined") return;
+        localStorage.setItem(TOKEN_KEY, token);
+        setCookie(token);
+    },
 
-    clear: () =>
-        typeof window !== "undefined" && localStorage.removeItem(TOKEN_KEY),
+    clear: () => {
+        if (typeof window === "undefined") return;
+        localStorage.removeItem(TOKEN_KEY);
+        clearCookie();
+    },
 };
 
 // ── Axios instance ──────────────────────────────────

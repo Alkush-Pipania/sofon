@@ -152,7 +152,12 @@ func (s *Service) AcceptInvitation(ctx context.Context, cmd AcceptInvitationCmd)
 	}
 
 	if err := s.repo.AddMember(ctx, inv.TeamID, userID, inv.Role); err != nil {
-		return err
+		// If the user is already a member, still mark the invitation as accepted
+		// rather than surfacing a constraint error.
+		already, checkErr := s.repo.IsMember(ctx, inv.TeamID, userID)
+		if checkErr != nil || !already {
+			return err
+		}
 	}
 
 	return s.repo.AcceptInvitation(ctx, cmd.Token)

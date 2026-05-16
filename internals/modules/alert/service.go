@@ -15,43 +15,55 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// PluginConfigGetter is satisfied by *plugin.Repository.
+// Defined here to avoid importing the plugin package from alert.
+type PluginConfigGetter interface {
+	GetResendConfig(ctx context.Context, teamID uuid.UUID) (ResendEmailConfig, bool, error)
+}
+
+// ResendEmailConfig holds only what the alert service needs from a Resend plugin.
+type ResendEmailConfig struct {
+	APIKey      string
+	SenderEmail string
+}
+
+// PluginCacheClient is satisfied by *redis.Client.
+type PluginCacheClient interface {
+	GetCachedResendConfig(ctx context.Context, teamID uuid.UUID) (ResendEmailConfig, bool)
+	SetCachedResendConfig(ctx context.Context, teamID uuid.UUID, cfg ResendEmailConfig, ttl time.Duration) error
+}
+
 type AlertService struct {
-	// lifecycle
 	workerCount int
 	workerWG    sync.WaitGroup
 
-	// config
-	ownerEmail       string
-	resendAPIKey     string
-	resendKillSwitch bool
-
-	// dependencies
-	db           *pgxpool.Pool
-	resendClient resendpkg.Client
-
-	// channels
-	alertChan chan AlertEvent
-
-	// misc
-	logger *zerolog.Logger
+	pluginRepo  PluginConfigGetter
+	redisCache  PluginCacheClient
+	db          *pgxpool.Pool
+	alertChan   chan AlertEvent
+	logger      *zerolog.Logger
 }
 
-func NewAlertService(alertConfig *config.AlertConfig, db *pgxpool.Pool, alertChan chan AlertEvent, logger *zerolog.Logger) *AlertService {
+func NewAlertService(
+	alertConfig *config.AlertConfig,
+	db *pgxpool.Pool,
+	pluginRepo PluginConfigGetter,
+	redisCache PluginCacheClient,
+	alertChan chan AlertEvent,
+	logger *zerolog.Logger,
+) *AlertService {
 	return &AlertService{
-		workerCount:      alertConfig.WorkerCount,
-		ownerEmail:       strings.TrimSpace(alertConfig.OwnerEmail),
-		resendAPIKey:     strings.TrimSpace(alertConfig.ResendAPIKey),
-		resendKillSwitch: alertConfig.ResendKillSwitch,
-		db:               db,
-		resendClient:     resendpkg.NewResendClient(strings.TrimSpace(alertConfig.ResendAPIKey)),
-		alertChan:        alertChan,
-		logger:           logger,
+		workerCount: alertConfig.WorkerCount,
+		pluginRepo:  pluginRepo,
+		redisCache:  redisCache,
+		db:          db,
+		alertChan:   alertChan,
+		logger:      logger,
 	}
 }
 
 func (s *AlertService) Start() {
 	s.workerWG.Add(s.workerCount)
-
 	for range s.workerCount {
 		go s.handleAlerts()
 	}
@@ -60,107 +72,90 @@ func (s *AlertService) Start() {
 
 func (s *AlertService) handleAlerts() {
 	defer s.workerWG.Done()
-
 	for alert := range s.alertChan {
 		s.processAlert(alert)
 	}
 }
 
-func (s *AlertService) processAlert(alert AlertEvent) {
-	if alert.Type == "" {
-		alert.Type = AlertTypeDown
+func (s *AlertService) processAlert(event AlertEvent) {
+	if event.Type == "" {
+		event.Type = AlertTypeDown
 	}
 
-	recipient := strings.TrimSpace(alert.AlertEmail)
-	if recipient == "" {
-		recipient = s.ownerEmail
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
-	if recipient == "" {
-		s.logger.Error().
-			Str("incident_id", alert.IncidentID.String()).
-			Str("monitor_id", alert.MonitorID.String()).
-			Msg("skipping alert: recipient email is empty")
-		if err := s.persistAlert(alert.IncidentID, "", "failed", time.Time{}); err != nil {
-			s.logger.Error().
-				Err(err).
-				Str("incident_id", alert.IncidentID.String()).
-				Str("monitor_id", alert.MonitorID.String()).
-				Msg("failed to persist alert record for empty recipient")
+	// Load Resend config from cache → DB
+	resendCfg, ok := s.redisCache.GetCachedResendConfig(ctx, event.TeamID)
+	if !ok {
+		dbCfg, found, err := s.pluginRepo.GetResendConfig(ctx, event.TeamID)
+		if err != nil {
+			s.logger.Error().Err(err).Str("team_id", event.TeamID.String()).Msg("failed to load resend plugin config")
+			_ = s.persistAlert(event.IncidentID, "", "failed", time.Time{})
+			return
 		}
-		return
+		if !found {
+			s.logger.Warn().
+				Str("incident_id", event.IncidentID.String()).
+				Str("team_id", event.TeamID.String()).
+				Msg("skipping alert: resend plugin not configured or disabled")
+			_ = s.persistAlert(event.IncidentID, "", "skipped_no_plugin", time.Time{})
+			return
+		}
+		resendCfg = ResendEmailConfig{APIKey: dbCfg.APIKey, SenderEmail: dbCfg.SenderEmail}
+		_ = s.redisCache.SetCachedResendConfig(ctx, event.TeamID, resendCfg, 5*time.Minute)
 	}
 
-	if s.resendKillSwitch {
-		s.logger.Warn().
-			Str("incident_id", alert.IncidentID.String()).
-			Str("monitor_id", alert.MonitorID.String()).
-			Str("recipient", recipient).
-			Msg("email sending skipped: resend kill switch is enabled")
-		if err := s.persistAlert(alert.IncidentID, recipient, "skipped_kill_switch", time.Time{}); err != nil {
-			s.logger.Error().
-				Err(err).
-				Str("incident_id", alert.IncidentID.String()).
-				Str("monitor_id", alert.MonitorID.String()).
-				Msg("failed to persist skipped alert record")
-		}
+	recipient := strings.TrimSpace(event.AlertEmail)
+	if recipient == "" {
+		recipient = resendCfg.SenderEmail
+	}
+	if recipient == "" {
+		s.logger.Error().Str("incident_id", event.IncidentID.String()).Msg("skipping alert: no recipient email")
+		_ = s.persistAlert(event.IncidentID, "", "failed", time.Time{})
 		return
 	}
 
 	status := "sent"
 	sentAt := time.Now().UTC()
 
-	resendID, err := s.sendAlertEmail(alert, recipient)
+	resendID, err := s.sendAlertEmail(resendCfg, event, recipient)
 	if err != nil {
 		status = "failed"
 		sentAt = time.Time{}
-		s.logger.Error().
-			Err(err).
-			Str("incident_id", alert.IncidentID.String()).
-			Str("monitor_id", alert.MonitorID.String()).
+		s.logger.Error().Err(err).
+			Str("incident_id", event.IncidentID.String()).
 			Str("recipient", recipient).
 			Msg("failed to send incident email")
 	} else {
 		s.logger.Info().
-			Str("incident_id", alert.IncidentID.String()).
-			Str("monitor_id", alert.MonitorID.String()).
+			Str("incident_id", event.IncidentID.String()).
 			Str("recipient", recipient).
 			Str("resend_email_id", resendID).
 			Msg("incident email sent")
 	}
 
-	if err := s.persistAlert(alert.IncidentID, recipient, status, sentAt); err != nil {
-		s.logger.Error().
-			Err(err).
-			Str("incident_id", alert.IncidentID.String()).
-			Str("monitor_id", alert.MonitorID.String()).
-			Msg("failed to persist alert record")
-	}
+	_ = s.persistAlert(event.IncidentID, recipient, status, sentAt)
 }
 
-func (s *AlertService) sendAlertEmail(alert AlertEvent, recipient string) (string, error) {
-	if s.resendAPIKey == "" {
-		return "", fmt.Errorf("missing resend api key")
-	}
-	if s.ownerEmail == "" {
-		return "", fmt.Errorf("missing owner email for sender identity")
+func (s *AlertService) sendAlertEmail(cfg ResendEmailConfig, event AlertEvent, recipient string) (string, error) {
+	client := resendpkg.NewResendClient(cfg.APIKey)
+
+	subject := fmt.Sprintf("[SOFON][DOWN] Monitor %s is down", event.MonitorID.String())
+	if event.Type == AlertTypeRecovered {
+		subject = fmt.Sprintf("[SOFON][RECOVERED] Monitor %s is back up", event.MonitorID.String())
 	}
 
-	subject := fmt.Sprintf("[SOFON][DOWN] Monitor %s is down", alert.MonitorID.String())
-	if alert.Type == AlertTypeRecovered {
-		subject = fmt.Sprintf("[SOFON][RECOVERED] Monitor %s is back up", alert.MonitorID.String())
-	}
-
-	htmlBody, textBody, err := buildMonitorEmail(alert)
+	htmlBody, textBody, err := buildMonitorEmail(event)
 	if err != nil {
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	return s.resendClient.SendEmail(ctx, &resendpkg.SendEmailRequest{
-		From:    s.ownerEmail,
+	return client.SendEmail(sendCtx, &resendpkg.SendEmailRequest{
+		From:    cfg.SenderEmail,
 		To:      []string{recipient},
 		Subject: subject,
 		Html:    htmlBody,
@@ -176,7 +171,6 @@ func (s *AlertService) persistAlert(incidentID uuid.UUID, alertEmail string, sta
 INSERT INTO alerts (incident_id, alert_email, status, sent_at)
 VALUES ($1, $2, $3, $4)
 `
-
 	var nullableSentAt any
 	if !sentAt.IsZero() {
 		nullableSentAt = sentAt
@@ -186,12 +180,11 @@ VALUES ($1, $2, $3, $4)
 	return err
 }
 
-// WorkerClosingWait waits for alert workers to complete
 func (s *AlertService) WorkerClosingWait() {
 	s.workerWG.Wait()
 }
 
-func buildMonitorEmail(alert AlertEvent) (string, string, error) {
+func buildMonitorEmail(event AlertEvent) (string, string, error) {
 	type templateData struct {
 		IncidentID string
 		MonitorID  string
@@ -211,21 +204,20 @@ func buildMonitorEmail(alert AlertEvent) (string, string, error) {
 	bannerFg := "#ffffff"
 	message := "We detected an outage for one of your monitors. Please review the details below and take action."
 
-	if alert.Type == AlertTypeRecovered {
+	if event.Type == AlertTypeRecovered {
 		stateTitle = "Monitor Recovered"
 		bannerBg = "#16a34a"
-		bannerFg = "#ffffff"
 		message = "Good news. Your monitor is responding again and the incident has been marked as resolved."
 	}
 
 	data := templateData{
-		IncidentID: alert.IncidentID.String(),
-		MonitorID:  alert.MonitorID.String(),
-		MonitorURL: alert.MonitorURL,
-		Reason:     alert.Reason,
-		StatusCode: alert.StatusCode,
-		LatencyMs:  alert.LatencyMs,
-		CheckedAt:  alert.CheckedAt.UTC().Format(time.RFC1123Z),
+		IncidentID: event.IncidentID.String(),
+		MonitorID:  event.MonitorID.String(),
+		MonitorURL: event.MonitorURL,
+		Reason:     event.Reason,
+		StatusCode: event.StatusCode,
+		LatencyMs:  event.LatencyMs,
+		CheckedAt:  event.CheckedAt.UTC().Format(time.RFC1123Z),
 		StateTitle: stateTitle,
 		BannerBg:   bannerBg,
 		BannerFg:   bannerFg,
@@ -291,7 +283,6 @@ Checked At (UTC): {{ .CheckedAt }}
 	if err != nil {
 		return "", "", err
 	}
-
 	textT, err := template.New("monitor_down_text").Parse(textTpl)
 	if err != nil {
 		return "", "", err
@@ -301,7 +292,6 @@ Checked At (UTC): {{ .CheckedAt }}
 	if err := htmlT.Execute(&htmlBuf, data); err != nil {
 		return "", "", err
 	}
-
 	var textBuf strings.Builder
 	if err := textT.Execute(&textBuf, data); err != nil {
 		return "", "", err

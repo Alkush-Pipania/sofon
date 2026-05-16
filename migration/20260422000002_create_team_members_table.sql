@@ -1,3 +1,5 @@
+-- +goose Up
+-- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS team_members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
@@ -7,3 +9,9 @@ CREATE TABLE IF NOT EXISTS team_members (
     joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (team_id, user_id)
 );
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS team_members;
+-- +goose StatementEnd

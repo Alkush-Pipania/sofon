@@ -5,326 +5,365 @@ import Link from "next/link";
 import { get } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
 import { useTeamStore } from "@/store/team-store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import {
+    AlertCircle, ChevronLeft, ChevronRight, Clock, ExternalLink,
+    Loader2, RefreshCw, Search, Zap, Mail, MailX,
+} from "lucide-react";
 
 type IncidentStatus = "all" | "active" | "resolved";
 
 interface LatestAlert {
-	status?: string;
-	email?: string;
-	sent_at?: string | null;
+    status?: string;
+    email?: string;
+    sent_at?: string | null;
 }
 
 interface Incident {
-	id: string;
-	monitor_id: string;
-	monitor_url: string;
-	start_time: string;
-	end_time?: string | null;
-	alerted: boolean;
-	http_status: number;
-	latency_ms: number;
-	created_at: string;
-	is_active: boolean;
-	duration_sec: number;
-	latest_alert?: LatestAlert | null;
+    id: string;
+    monitor_id: string;
+    monitor_url: string;
+    start_time: string;
+    end_time?: string | null;
+    alerted: boolean;
+    http_status: number;
+    latency_ms: number;
+    created_at: string;
+    is_active: boolean;
+    duration_sec: number;
+    reason?: string;
+    latest_alert?: LatestAlert | null;
 }
 
 interface IncidentListPayload {
-	limit: number;
-	has_more: boolean;
-	next_cursor?: string | null;
-	incidents: Incident[];
+    limit: number;
+    has_more: boolean;
+    next_cursor?: string | null;
+    incidents: Incident[];
 }
 
 interface IncidentListResponse {
-	success: boolean;
-	message: string;
-	data: IncidentListPayload;
+    success: boolean;
+    data: IncidentListPayload;
 }
 
-interface AppliedFilters {
-	status: IncidentStatus;
-	query: string;
-	fromDate: string;
-	toDate: string;
+function formatDuration(sec: number): string {
+    if (sec < 60) return `${sec}s`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return `${h}h ${m}m`;
 }
 
-const DEFAULT_FILTERS: AppliedFilters = {
-	status: "all",
-	query: "",
-	fromDate: "",
-	toDate: "",
-};
-
-function formatDuration(seconds: number): string {
-	if (seconds < 60) return `${seconds}s`;
-	if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-	const h = Math.floor(seconds / 3600);
-	const m = Math.floor((seconds % 3600) / 60);
-	return `${h}h ${m}m`;
+function formatRelative(iso: string): string {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function toISODateStart(date: string): string {
-	return new Date(`${date}T00:00:00`).toISOString();
+function formatUrl(raw: string) {
+    try {
+        const u = new URL(raw);
+        return u.hostname + (u.pathname !== "/" ? u.pathname : "");
+    } catch {
+        return raw;
+    }
 }
 
-function toISODateEnd(date: string): string {
-	return new Date(`${date}T23:59:59`).toISOString();
+function httpStatusColor(code: number): string {
+    if (!code || code === 0) return "border-zinc-500/30 bg-zinc-500/10 text-zinc-400";
+    if (code >= 500) return "border-red-500/30 bg-red-500/10 text-red-500";
+    if (code >= 400) return "border-orange-500/30 bg-orange-500/10 text-orange-500";
+    if (code >= 300) return "border-yellow-500/30 bg-yellow-500/10 text-yellow-500";
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-500";
 }
+
+function AlertChip({ alert }: { alert?: LatestAlert | null }) {
+    if (!alert?.status || alert.status === "not_sent") {
+        return <span className="text-xs text-muted-foreground">—</span>;
+    }
+    if (alert.status === "sent") {
+        return (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-500">
+                <Mail className="h-3 w-3" /> sent
+            </span>
+        );
+    }
+    return (
+        <span className="inline-flex items-center gap-1 text-xs text-red-500">
+            <MailX className="h-3 w-3" /> failed
+        </span>
+    );
+}
+
+const STATUS_TABS: { label: string; value: IncidentStatus }[] = [
+    { label: "All", value: "all" },
+    { label: "Active", value: "active" },
+    { label: "Resolved", value: "resolved" },
+];
 
 export default function IncidentsPage() {
-	const currentTeam = useTeamStore((s) => s.currentTeam);
-	const [incidents, setIncidents] = useState<Incident[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+    const currentTeam = useTeamStore((s) => s.currentTeam);
+    const [incidents, setIncidents] = useState<Incident[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-	const [draftFilters, setDraftFilters] = useState<AppliedFilters>(DEFAULT_FILTERS);
-	const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>(DEFAULT_FILTERS);
+    const [status, setStatus] = useState<IncidentStatus>("all");
+    const [query, setQuery] = useState("");
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
 
-	const [cursor, setCursor] = useState<string | null>(null);
-	const [history, setHistory] = useState<string[]>([]);
-	const [nextCursor, setNextCursor] = useState<string | null>(null);
-	const [hasMore, setHasMore] = useState(false);
+    const [cursor, setCursor] = useState<string | null>(null);
+    const [history, setHistory] = useState<string[]>([]);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [hasMore, setHasMore] = useState(false);
 
-	const fetchIncidents = async (cursorValue: string | null, filters: AppliedFilters) => {
-		if (!currentTeam) return;
-		setLoading(true);
-		setError(null);
-		try {
-			const params = new URLSearchParams();
-			params.set("limit", "20");
-			params.set("status", filters.status);
-			if (filters.query.trim()) params.set("q", filters.query.trim());
-			if (filters.fromDate) params.set("from", toISODateStart(filters.fromDate));
-			if (filters.toDate) params.set("to", toISODateEnd(filters.toDate));
-			if (cursorValue) params.set("cursor", cursorValue);
+    const fetch = async (cursorValue: string | null) => {
+        if (!currentTeam) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const p = new URLSearchParams();
+            p.set("limit", "20");
+            p.set("status", status);
+            if (query.trim()) p.set("q", query.trim());
+            if (fromDate) p.set("from", new Date(`${fromDate}T00:00:00`).toISOString());
+            if (toDate) p.set("to", new Date(`${toDate}T23:59:59`).toISOString());
+            if (cursorValue) p.set("cursor", cursorValue);
 
-			const res = await get<IncidentListResponse>(`${ENDPOINTS.INCIDENTS.LIST(currentTeam.id)}?${params.toString()}`);
+            const res = await get<IncidentListResponse>(
+                `${ENDPOINTS.INCIDENTS.LIST(currentTeam.id)}?${p.toString()}`
+            );
+            setIncidents(res.data.incidents ?? []);
+            setHasMore(res.data.has_more ?? false);
+            setNextCursor(res.data.next_cursor ?? null);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to fetch incidents");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-			setIncidents(res.data.incidents ?? []);
-			setHasMore(res.data.has_more ?? false);
-			setNextCursor(res.data.next_cursor ?? null);
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : "Failed to fetch incidents";
-			setError(msg);
-		} finally {
-			setLoading(false);
-		}
-	};
+    useEffect(() => { fetch(cursor); }, [cursor, currentTeam?.id]);
 
-	useEffect(() => {
-		fetchIncidents(cursor, appliedFilters);
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [cursor, appliedFilters, currentTeam?.id]);
+    const activeCount = useMemo(() => incidents.filter((i) => i.is_active).length, [incidents]);
 
-	const currentActive = useMemo(() => incidents.filter((i) => i.is_active).length, [incidents]);
+    const onApply = () => { setCursor(null); setHistory([]); fetch(null); };
+    const onClear = () => { setQuery(""); setFromDate(""); setToDate(""); setStatus("all"); setCursor(null); setHistory([]); };
+    const onNext = () => { if (!nextCursor) return; setHistory((h) => [...h, cursor ?? ""]); setCursor(nextCursor); };
+    const onPrev = () => {
+        setHistory((h) => {
+            const copy = [...h];
+            const prev = copy.pop() ?? "";
+            setCursor(prev === "" ? null : prev);
+            return copy;
+        });
+    };
 
-	const onApplyFilters = () => {
-		setAppliedFilters(draftFilters);
-		setCursor(null);
-		setHistory([]);
-	};
+    return (
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight">Incidents</h1>
+                    <p className="text-sm text-muted-foreground">Outages detected across your monitored endpoints.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => fetch(cursor)} disabled={loading} className="gap-1.5">
+                    <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+                    Refresh
+                </Button>
+            </div>
 
-	const onClearFilters = () => {
-		setDraftFilters(DEFAULT_FILTERS);
-		setAppliedFilters(DEFAULT_FILTERS);
-		setCursor(null);
-		setHistory([]);
-	};
+            {/* Filters */}
+            <div className="flex flex-wrap items-end gap-3">
+                {/* Status pills */}
+                <div className="flex rounded-lg border border-border p-0.5 gap-0.5">
+                    {STATUS_TABS.map((t) => (
+                        <button
+                            key={t.value}
+                            onClick={() => { setStatus(t.value); setCursor(null); setHistory([]); }}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors
+                                ${status === t.value
+                                    ? "bg-white text-black"
+                                    : "text-muted-foreground hover:text-foreground"
+                                }`}
+                        >
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
 
-	const onNext = () => {
-		if (!nextCursor) return;
-		setHistory((prev) => [...prev, cursor ?? ""]);
-		setCursor(nextCursor);
-	};
+                {/* URL search */}
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                        placeholder="Search URL…"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && onApply()}
+                        className="h-9 w-48 pl-8 text-sm"
+                    />
+                </div>
 
-	const onPrev = () => {
-		setHistory((prev) => {
-			if (prev.length === 0) return prev;
-			const copy = [...prev];
-			const previousCursor = copy.pop() ?? "";
-			setCursor(previousCursor === "" ? null : previousCursor);
-			return copy;
-		});
-	};
+                {/* Date range */}
+                <div className="flex items-center gap-1.5">
+                    <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-9 w-36 text-sm" />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-9 w-36 text-sm" />
+                </div>
 
-	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Incidents</h1>
-					<p className="text-sm text-muted-foreground">Filter outages and navigate incident history with cursors.</p>
-				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={() => fetchIncidents(cursor, appliedFilters)}
-					disabled={loading}
-					className="gap-1.5"
-				>
-					<RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-					Refresh
-				</Button>
-			</div>
+                <Button size="sm" onClick={onApply} className="h-9 bg-white text-black hover:bg-white/90">Apply</Button>
+                {(query || fromDate || toDate || status !== "all") && (
+                    <Button size="sm" variant="ghost" onClick={onClear} className="h-9 text-muted-foreground">Clear</Button>
+                )}
+            </div>
 
-			<Card>
-				<CardHeader className="pb-3">
-					<CardTitle className="text-base">Filters</CardTitle>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-						<div className="space-y-1">
-							<label className="text-xs text-muted-foreground">Status</label>
-							<select
-								value={draftFilters.status}
-								onChange={(e) => setDraftFilters((p) => ({ ...p, status: e.target.value as IncidentStatus }))}
-								className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-							>
-								<option value="all">All</option>
-								<option value="active">Active</option>
-								<option value="resolved">Resolved</option>
-							</select>
-						</div>
-						<div className="space-y-1">
-							<label className="text-xs text-muted-foreground">Monitor URL contains</label>
-							<Input
-								placeholder="api.example.com"
-								value={draftFilters.query}
-								onChange={(e) => setDraftFilters((p) => ({ ...p, query: e.target.value }))}
-							/>
-						</div>
-						<div className="space-y-1">
-							<label className="text-xs text-muted-foreground">From date</label>
-							<Input
-								type="date"
-								value={draftFilters.fromDate}
-								onChange={(e) => setDraftFilters((p) => ({ ...p, fromDate: e.target.value }))}
-							/>
-						</div>
-						<div className="space-y-1">
-							<label className="text-xs text-muted-foreground">To date</label>
-							<Input
-								type="date"
-								value={draftFilters.toDate}
-								onChange={(e) => setDraftFilters((p) => ({ ...p, toDate: e.target.value }))}
-							/>
-						</div>
-					</div>
-					<div className="flex items-center gap-2">
-						<Button size="sm" onClick={onApplyFilters}>Apply</Button>
-						<Button size="sm" variant="outline" onClick={onClearFilters}>Clear</Button>
-					</div>
-				</CardContent>
-			</Card>
+            {/* Summary bar */}
+            {!loading && incidents.length > 0 && (
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>{incidents.length} incident{incidents.length !== 1 ? "s" : ""} on page</span>
+                    {activeCount > 0 && (
+                        <span className="flex items-center gap-1.5 text-red-500">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                            </span>
+                            {activeCount} active
+                        </span>
+                    )}
+                </div>
+            )}
 
-			<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-				<Card>
-					<CardHeader className="pb-2">
-						<CardTitle className="text-sm font-medium text-muted-foreground">Incidents On Page</CardTitle>
-					</CardHeader>
-					<CardContent>
-						<div className="text-2xl font-semibold">{incidents.length}</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader className="pb-2">
-						<CardTitle className="text-sm font-medium text-muted-foreground">Active On Page</CardTitle>
-					</CardHeader>
-					<CardContent>
-						<div className="text-2xl font-semibold text-destructive">{currentActive}</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader className="pb-2">
-						<CardTitle className="text-sm font-medium text-muted-foreground">Resolved On Page</CardTitle>
-					</CardHeader>
-					<CardContent>
-						<div className="text-2xl font-semibold">{Math.max(incidents.length - currentActive, 0)}</div>
-					</CardContent>
-				</Card>
-			</div>
+            {/* Table */}
+            {loading ? (
+                <div className="flex h-56 items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Loading incidents…
+                </div>
+            ) : error ? (
+                <div className="flex h-56 flex-col items-center justify-center gap-2 text-destructive">
+                    <AlertCircle className="h-5 w-5" />
+                    <p className="text-sm">{error}</p>
+                    <Button variant="outline" size="sm" onClick={() => fetch(cursor)}>Retry</Button>
+                </div>
+            ) : (
+                <>
+                    <div className="rounded-xl border border-border overflow-hidden">
+                        {incidents.length === 0 ? (
+                            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                                No incidents found.
+                            </div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-border bg-muted/30 text-xs text-muted-foreground">
+                                        <th className="px-5 py-3 text-left font-medium">Monitor</th>
+                                        <th className="px-4 py-3 text-left font-medium">Status</th>
+                                        <th className="px-4 py-3 text-left font-medium">Started</th>
+                                        <th className="px-4 py-3 text-left font-medium">Duration</th>
+                                        <th className="px-4 py-3 text-left font-medium">HTTP</th>
+                                        <th className="px-4 py-3 text-left font-medium">Latency</th>
+                                        <th className="px-4 py-3 text-left font-medium">Alert</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {incidents.map((inc, idx) => (
+                                        <tr
+                                            key={inc.id}
+                                            className={`group transition-colors hover:bg-muted/30 ${idx !== incidents.length - 1 ? "border-b border-border" : ""}`}
+                                        >
+                                            {/* Monitor */}
+                                            <td className="px-5 py-3.5">
+                                                <Link
+                                                    href={`/incidents/${inc.id}`}
+                                                    className="flex items-center gap-1.5 font-medium hover:underline"
+                                                >
+                                                    {formatUrl(inc.monitor_url)}
+                                                    <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                </Link>
+                                            </td>
 
-			{loading ? (
-				<div className="flex h-56 items-center justify-center gap-2 text-muted-foreground">
-					<Loader2 className="h-5 w-5 animate-spin" />
-					Loading incidents...
-				</div>
-			) : error ? (
-				<div className="flex h-56 flex-col items-center justify-center gap-2 text-destructive">
-					<AlertCircle className="h-5 w-5" />
-					<p>{error}</p>
-				</div>
-			) : (
-				<>
-					<div className="rounded-xl border bg-card">
-						<Table>
-							<TableHeader>
-								<TableRow className="hover:bg-transparent">
-									<TableHead>Monitor</TableHead>
-									<TableHead>Status</TableHead>
-									<TableHead>Started</TableHead>
-									<TableHead>Duration</TableHead>
-									<TableHead>HTTP</TableHead>
-									<TableHead>Alert</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{incidents.length === 0 ? (
-									<TableRow>
-										<TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
-											No incidents found.
-										</TableCell>
-									</TableRow>
-								) : (
-									incidents.map((incident) => (
-										<TableRow key={incident.id} className="group">
-											<TableCell className="font-medium">
-												<Link href={`/incidents/${incident.id}`} className="hover:underline">
-													{incident.monitor_url}
-												</Link>
-											</TableCell>
-											<TableCell>
-												{incident.is_active ? (
-													<Badge variant="outline" className="border-red-500/30 bg-red-500/10 text-red-600">
-														Active
-													</Badge>
-												) : (
-													<Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600">
-														Resolved
-													</Badge>
-												)}
-											</TableCell>
-											<TableCell className="text-muted-foreground">
-												{new Date(incident.start_time).toLocaleString()}
-											</TableCell>
-											<TableCell>{formatDuration(incident.duration_sec)}</TableCell>
-											<TableCell>{incident.http_status}</TableCell>
-											<TableCell>{incident.latest_alert?.status || "not_sent"}</TableCell>
-										</TableRow>
-									))
-								)}
-							</TableBody>
-						</Table>
-					</div>
+                                            {/* Status */}
+                                            <td className="px-4 py-3.5">
+                                                {inc.is_active ? (
+                                                    <span className="inline-flex items-center gap-1.5 text-red-500 text-xs font-medium">
+                                                        <span className="relative flex h-2 w-2">
+                                                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+                                                            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                                                        </span>
+                                                        Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 text-emerald-500 text-xs font-medium">
+                                                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                                        Resolved
+                                                    </span>
+                                                )}
+                                            </td>
 
-					<div className="flex items-center justify-end gap-2">
-						<Button variant="outline" size="sm" onClick={onPrev} disabled={history.length === 0 || loading}>
-							<ChevronLeft className="mr-1 h-4 w-4" />
-							Prev
-						</Button>
-						<Button variant="outline" size="sm" onClick={onNext} disabled={!hasMore || !nextCursor || loading}>
-							Next
-							<ChevronRight className="ml-1 h-4 w-4" />
-						</Button>
-					</div>
-				</>
-			)}
-		</div>
-	);
+                                            {/* Started */}
+                                            <td className="px-4 py-3.5 text-muted-foreground">
+                                                <span title={new Date(inc.start_time).toLocaleString()}>
+                                                    {formatRelative(inc.start_time)}
+                                                </span>
+                                            </td>
+
+                                            {/* Duration */}
+                                            <td className="px-4 py-3.5">
+                                                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                                    <Clock className="h-3 w-3" />
+                                                    {formatDuration(inc.duration_sec)}
+                                                </span>
+                                            </td>
+
+                                            {/* HTTP status */}
+                                            <td className="px-4 py-3.5">
+                                                <Badge variant="outline" className={`text-xs font-mono ${httpStatusColor(inc.http_status)}`}>
+                                                    {inc.http_status || "—"}
+                                                </Badge>
+                                            </td>
+
+                                            {/* Latency */}
+                                            <td className="px-4 py-3.5">
+                                                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                                    <Zap className="h-3 w-3" />
+                                                    {inc.latency_ms > 0 ? `${inc.latency_ms} ms` : "—"}
+                                                </span>
+                                            </td>
+
+                                            {/* Alert */}
+                                            <td className="px-4 py-3.5">
+                                                <AlertChip alert={inc.latest_alert} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    {/* Pagination */}
+                    {(history.length > 0 || hasMore) && (
+                        <div className="flex items-center justify-between px-1">
+                            <p className="text-sm text-muted-foreground">
+                                Showing <span className="font-medium text-foreground">{incidents.length}</span> incident{incidents.length !== 1 ? "s" : ""}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={onPrev} disabled={history.length === 0 || loading} className="h-8 gap-1 px-2.5">
+                                    <ChevronLeft className="h-4 w-4" /> Prev
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={onNext} disabled={!hasMore || loading} className="h-8 gap-1 px-2.5">
+                                    Next <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Copy, Check, Loader2, MoreHorizontal, UserPlus, UserX, UserCheck } from "lucide-react";
+import { Copy, Check, Loader2, MoreHorizontal, UserPlus, UserX, UserCheck, Mail, Clock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,14 +30,6 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { get, put, post, del, patch } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
 import { parseApiError } from "@/lib/api-error";
@@ -61,15 +53,35 @@ interface InviteForm { email: string; role: string }
 interface TeamNameForm { name: string }
 
 // ── Helpers ────────────────────────────────────────────────────
+const MEMBER_COLORS = ["#8b5cf6", "#3b82f6", "#10b981", "#f97316", "#f43f5e", "#06b6d4"];
+
+function memberColor(name: string) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
+}
+
+function MemberAvatar({ name }: { name: string }) {
+    const color = memberColor(name);
+    return (
+        <span
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
+            style={{ backgroundColor: "#0d0d0d", background: `radial-gradient(circle at center, ${color} 0%, transparent 75%)` }}
+        >
+            {name.charAt(0).toUpperCase()}
+        </span>
+    );
+}
+
 const roleBadgeClass: Record<string, string> = {
-    owner:  "border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400",
-    admin:  "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    member: "border-zinc-500/30 bg-zinc-500/10 text-zinc-500 dark:text-zinc-400",
+    owner:  "border-purple-500/30 bg-purple-500/10 text-purple-500",
+    admin:  "border-blue-500/30 bg-blue-500/10 text-blue-500",
+    member: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
 };
 
 function RoleBadge({ role }: { role: string }) {
     return (
-        <Badge variant="outline" className={`capitalize ${roleBadgeClass[role] ?? ""}`}>
+        <Badge variant="outline" className={`capitalize text-xs ${roleBadgeClass[role] ?? ""}`}>
             {role}
         </Badge>
     );
@@ -84,7 +96,7 @@ function CopyButton({ text }: { text: string }) {
     };
     return (
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={copy}>
-            {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
         </Button>
     );
 }
@@ -117,13 +129,17 @@ export default function TeamPage() {
         try {
             const [m, i, profile] = await Promise.all([
                 get<MemberResponse>(ENDPOINTS.TEAMS.MEMBERS(currentTeam.id)),
-                get<InvitationsResponse>(ENDPOINTS.TEAMS.INVITATIONS(currentTeam.id)),
-                get<{ success: boolean; data: { id: string; role: string } }>(ENDPOINTS.USERS.ME),
+                get<InvitationsResponse>(ENDPOINTS.TEAMS.INVITATIONS(currentTeam.id)).catch(() => ({ data: [] as Invitation[] })),
+                get<{ success: boolean; data: { id: string } }>(ENDPOINTS.USERS.ME),
             ]);
             nameForm.reset({ name: currentTeam.name });
-            setMembers(m.data ?? []);
-            setMe({ id: profile.data.id, role: profile.data.role });
-            setInvitations((i.data ?? []).filter((inv) => !inv.accepted));
+            const memberList = m.data ?? [];
+            setMembers(memberList);
+            const myId = profile.data.id;
+            const myMembership = memberList.find((mem) => mem.id === myId);
+            setMe({ id: myId, role: myMembership?.role ?? "" });
+            const now = new Date();
+            setInvitations((i.data ?? []).filter((inv) => !inv.accepted && new Date(inv.expires_at) > now));
         } catch {
             // silently fail — table will show empty
         } finally {
@@ -248,160 +264,147 @@ export default function TeamPage() {
                 </TabsContent>
 
                 {/* ── Members Tab ── */}
-                <TabsContent value="members" className="mt-6 space-y-6">
+                <TabsContent value="members" className="mt-6 space-y-4">
 
-                    {/* Members table */}
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-3">
-                            <div>
-                                <CardTitle className="text-base">Members</CardTitle>
-                                <CardDescription>{members.length} member{members.length !== 1 ? "s" : ""}</CardDescription>
-                            </div>
-                            {(me?.role === "owner" || me?.role === "admin") && (
-                                <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteOpen(true); }}>
-                                    <UserPlus className="h-3.5 w-3.5" />
-                                    Invite
-                                </Button>
-                            )}
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="hover:bg-transparent">
-                                        <TableHead className="pl-6">Name</TableHead>
-                                        <TableHead>Email</TableHead>
-                                        <TableHead>Role</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Joined</TableHead>
-                                        <TableHead className="w-14">Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {members.map((m) => (
-                                        <TableRow key={m.id} className={!m.is_active ? "opacity-50" : ""}>
-                                            <TableCell className="pl-6 font-medium">
-                                                <div className="flex items-center gap-2">
-                                                    {m.name}
-                                                    {me?.id === m.id && (
-                                                        <Badge variant="outline" className="text-xs px-1.5 py-0 border-zinc-400/40 text-zinc-400">
-                                                            you
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground">{m.email}</TableCell>
-                                            <TableCell><RoleBadge role={m.role} /></TableCell>
-                                            <TableCell>
-                                                {m.is_active ? (
-                                                    <Badge variant="outline" className="gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                                        <span className="relative flex h-2 w-2">
-                                                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-                                                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                                        </span>
-                                                        Active
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-zinc-500">
-                                                        Deactivated
-                                                    </Badge>
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">
-                                                {new Date(m.created_at).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell className="pr-4">
-                                                {updatingMember === m.id ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                                                ) : (
-                                                    me?.id !== m.id &&
-                                                    (me?.role === "owner" || me?.role === "admin") &&
-                                                    !(m.role === "owner" && me?.role !== "owner") && (
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                                                    <MoreHorizontal className="h-4 w-4" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-40">
-                                                                {m.is_active ? (
-                                                                    <DropdownMenuItem
-                                                                        className="text-destructive focus:text-destructive"
-                                                                        onClick={() => setConfirmMember(m)}
-                                                                    >
-                                                                        <UserX className="mr-2 h-3.5 w-3.5" />
-                                                                        Deactivate
-                                                                    </DropdownMenuItem>
-                                                                ) : (
-                                                                    <DropdownMenuItem onClick={() => setMemberActive(m.id, true)}>
-                                                                        <UserCheck className="mr-2 h-3.5 w-3.5" />
-                                                                        Activate
-                                                                    </DropdownMenuItem>
-                                                                )}
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
-                                                    )
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
+                    {/* Header row */}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-sm font-semibold">{members.length} member{members.length !== 1 ? "s" : ""}</p>
+                            <p className="text-xs text-muted-foreground">People with access to {currentTeam.name}</p>
+                        </div>
+                        {(me?.role === "owner" || me?.role === "admin") && (
+                            <Button
+                                size="sm"
+                                className="gap-1.5 bg-white text-black hover:bg-white/90"
+                                onClick={() => { setInviteResult(null); setInviteOpen(true); }}
+                            >
+                                <UserPlus className="h-3.5 w-3.5" />
+                                Invite member
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Members list */}
+                    <div className="rounded-xl border border-border overflow-hidden">
+                        {members.map((m, idx) => {
+                            const canManage =
+                                me?.id !== m.id &&
+                                (me?.role === "owner" || me?.role === "admin") &&
+                                !(m.role === "owner" && me?.role !== "owner");
+
+                            return (
+                                <div
+                                    key={m.id}
+                                    className={`flex items-center gap-4 px-5 py-3.5 ${idx !== members.length - 1 ? "border-b border-border" : ""} ${!m.is_active ? "opacity-50" : ""}`}
+                                >
+                                    <MemberAvatar name={m.name} />
+
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium">{m.name}</span>
+                                            {me?.id === m.id && (
+                                                <span className="rounded-full border border-zinc-600/40 px-1.5 py-0 text-[10px] text-zinc-500">you</span>
+                                            )}
+                                            {!m.is_active && (
+                                                <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-zinc-500 text-[10px] px-1.5 py-0">
+                                                    deactivated
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                                    </div>
+
+                                    <div className="flex items-center gap-6">
+                                        <RoleBadge role={m.role} />
+
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground w-24 justify-end">
+                                            <Clock className="h-3 w-3 shrink-0" />
+                                            {new Date(m.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                                        </div>
+
+                                        <div className="w-8 flex justify-center">
+                                            {updatingMember === m.id ? (
+                                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                            ) : canManage ? (
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="w-40">
+                                                        {m.is_active ? (
+                                                            <DropdownMenuItem
+                                                                className="text-destructive focus:text-destructive"
+                                                                onClick={() => setConfirmMember(m)}
+                                                            >
+                                                                <UserX className="mr-2 h-3.5 w-3.5" />
+                                                                Deactivate
+                                                            </DropdownMenuItem>
+                                                        ) : (
+                                                            <DropdownMenuItem onClick={() => setMemberActive(m.id, true)}>
+                                                                <UserCheck className="mr-2 h-3.5 w-3.5" />
+                                                                Activate
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
 
                     {/* Pending invitations */}
                     {invitations.length > 0 && (
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-base">Pending invitations</CardTitle>
-                                <CardDescription>Invitations that haven&apos;t been accepted yet.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="p-0">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="hover:bg-transparent">
-                                            <TableHead className="pl-6">Email</TableHead>
-                                            <TableHead>Role</TableHead>
-                                            <TableHead>Expires</TableHead>
-                                            <TableHead>Link</TableHead>
-                                            <TableHead className="w-12" />
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {invitations.map((inv) => (
-                                            <TableRow key={inv.id}>
-                                                <TableCell className="pl-6 text-muted-foreground">{inv.email}</TableCell>
-                                                <TableCell><RoleBadge role={inv.role} /></TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">
-                                                    {new Date(inv.expires_at).toLocaleDateString()}
-                                                </TableCell>
-                                                <TableCell className="max-w-[220px]">
-                                                    <div className="flex min-w-0 items-center gap-1">
-                                                        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                                                            {inv.link}
-                                                        </span>
-                                                        <CopyButton text={inv.link} />
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="pr-4">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                                                        disabled={revoking === inv.id}
-                                                        onClick={() => revokeInvitation(inv.id)}
-                                                    >
-                                                        {revoking === inv.id
-                                                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                            : <UserX className="h-3.5 w-3.5" />}
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </CardContent>
-                        </Card>
+                        <div className="space-y-2">
+                            <p className="text-sm font-semibold">Pending invitations</p>
+                            <div className="rounded-xl border border-border overflow-hidden">
+                                {invitations.map((inv, idx) => (
+                                    <div
+                                        key={inv.id}
+                                        className={`flex items-center gap-4 px-5 py-3.5 ${idx !== invitations.length - 1 ? "border-b border-border" : ""}`}
+                                    >
+                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-border bg-muted/40">
+                                            <Mail className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-medium">{inv.email}</p>
+                                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                <Clock className="h-3 w-3" />
+                                                Expires {new Date(inv.expires_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-3">
+                                            <RoleBadge role={inv.role} />
+
+                                            <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/30 px-2.5 py-1 max-w-[180px]">
+                                                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                                                    {inv.link}
+                                                </span>
+                                                <CopyButton text={inv.link} />
+                                            </div>
+
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                                disabled={revoking === inv.id}
+                                                onClick={() => revokeInvitation(inv.id)}
+                                            >
+                                                {revoking === inv.id
+                                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                    : <UserX className="h-3.5 w-3.5" />}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     )}
                 </TabsContent>
             </Tabs>

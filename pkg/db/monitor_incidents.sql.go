@@ -72,7 +72,9 @@ SELECT
     EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
     COALESCE(a.status, '') AS alert_status,
     COALESCE(a.alert_email, '') AS alert_email,
-    a.sent_at AS alert_sent_at
+    a.sent_at AS alert_sent_at,
+    m.expected_status,
+    m.latency_threshold_ms
 FROM monitor_incidents mi
 JOIN monitors m ON m.id = mi.monitor_id
 LEFT JOIN LATERAL (
@@ -91,20 +93,22 @@ type GetIncidentByIDAndTeamIDParams struct {
 }
 
 type GetIncidentByIDAndTeamIDRow struct {
-	ID          pgtype.UUID
-	MonitorID   pgtype.UUID
-	MonitorUrl  string
-	StartTime   pgtype.Timestamptz
-	EndTime     pgtype.Timestamptz
-	Alerted     bool
-	HttpStatus  int32
-	LatencyMs   int32
-	CreatedAt   pgtype.Timestamptz
-	IsActive    bool
-	DurationSec int64
-	AlertStatus string
-	AlertEmail  string
-	AlertSentAt pgtype.Timestamptz
+	ID                 pgtype.UUID
+	MonitorID          pgtype.UUID
+	MonitorUrl         string
+	StartTime          pgtype.Timestamptz
+	EndTime            pgtype.Timestamptz
+	Alerted            bool
+	HttpStatus         int32
+	LatencyMs          int32
+	CreatedAt          pgtype.Timestamptz
+	IsActive           bool
+	DurationSec        int64
+	AlertStatus        string
+	AlertEmail         string
+	AlertSentAt        pgtype.Timestamptz
+	ExpectedStatus     pgtype.Int4
+	LatencyThresholdMs pgtype.Int4
 }
 
 func (q *Queries) GetIncidentByIDAndTeamID(ctx context.Context, arg GetIncidentByIDAndTeamIDParams) (GetIncidentByIDAndTeamIDRow, error) {
@@ -125,6 +129,8 @@ func (q *Queries) GetIncidentByIDAndTeamID(ctx context.Context, arg GetIncidentB
 		&i.AlertStatus,
 		&i.AlertEmail,
 		&i.AlertSentAt,
+		&i.ExpectedStatus,
+		&i.LatencyThresholdMs,
 	)
 	return i, err
 }
@@ -166,7 +172,9 @@ SELECT
     EXTRACT(EPOCH FROM (COALESCE(mi.end_time, now()) - mi.start_time))::BIGINT AS duration_sec,
     COALESCE(a.status, '') AS alert_status,
     COALESCE(a.alert_email, '') AS alert_email,
-    a.sent_at AS alert_sent_at
+    a.sent_at AS alert_sent_at,
+    m.expected_status,
+    m.latency_threshold_ms
 FROM monitor_incidents mi
 JOIN monitors m ON m.id = mi.monitor_id
 LEFT JOIN LATERAL (
@@ -207,20 +215,22 @@ type ListIncidentsByTeamCursorParams struct {
 }
 
 type ListIncidentsByTeamCursorRow struct {
-	ID          pgtype.UUID
-	MonitorID   pgtype.UUID
-	MonitorUrl  string
-	StartTime   pgtype.Timestamptz
-	EndTime     pgtype.Timestamptz
-	Alerted     bool
-	HttpStatus  int32
-	LatencyMs   int32
-	CreatedAt   pgtype.Timestamptz
-	IsActive    bool
-	DurationSec int64
-	AlertStatus string
-	AlertEmail  string
-	AlertSentAt pgtype.Timestamptz
+	ID                 pgtype.UUID
+	MonitorID          pgtype.UUID
+	MonitorUrl         string
+	StartTime          pgtype.Timestamptz
+	EndTime            pgtype.Timestamptz
+	Alerted            bool
+	HttpStatus         int32
+	LatencyMs          int32
+	CreatedAt          pgtype.Timestamptz
+	IsActive           bool
+	DurationSec        int64
+	AlertStatus        string
+	AlertEmail         string
+	AlertSentAt        pgtype.Timestamptz
+	ExpectedStatus     pgtype.Int4
+	LatencyThresholdMs pgtype.Int4
 }
 
 func (q *Queries) ListIncidentsByTeamCursor(ctx context.Context, arg ListIncidentsByTeamCursorParams) ([]ListIncidentsByTeamCursorRow, error) {
@@ -257,6 +267,8 @@ func (q *Queries) ListIncidentsByTeamCursor(ctx context.Context, arg ListInciden
 			&i.AlertStatus,
 			&i.AlertEmail,
 			&i.AlertSentAt,
+			&i.ExpectedStatus,
+			&i.LatencyThresholdMs,
 		); err != nil {
 			return nil, err
 		}

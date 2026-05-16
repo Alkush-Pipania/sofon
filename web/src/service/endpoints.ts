@@ -48,4 +48,12 @@ export const ENDPOINTS = {
         LIST: (teamId: string) => `/api/v1/teams/${teamId}/incidents`,
         GET: (teamId: string, id: string) => `/api/v1/teams/${teamId}/incidents/${id}`,
     },
+
+    // ── Plugins (team-scoped) ─────────────────────────
+    PLUGINS: {
+        LIST:   (teamId: string) => `/api/v1/teams/${teamId}/plugins`,
+        GET:    (teamId: string, type: string) => `/api/v1/teams/${teamId}/plugins/${type}`,
+        UPSERT: (teamId: string, type: string) => `/api/v1/teams/${teamId}/plugins/${type}`,
+        DELETE: (teamId: string, type: string) => `/api/v1/teams/${teamId}/plugins/${type}`,
+    },
 } as const;

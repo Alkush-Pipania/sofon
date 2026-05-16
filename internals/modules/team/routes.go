@@ -5,7 +5,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func Routes(h *Handler, authMW *middle.AuthMiddleware, teamAccessMW *middle.TeamAccessMiddleware) chi.Router {
+func Routes(h *Handler, authMW *middle.AuthMiddleware, teamAccessMW *middle.TeamAccessMiddleware, teamScoped ...func(chi.Router)) chi.Router {
 	r := chi.NewRouter()
 
 	// Public — used by the invite accept page (token is globally unique)
@@ -29,6 +29,11 @@ func Routes(h *Handler, authMW *middle.AuthMiddleware, teamAccessMW *middle.Team
 		r.With(middle.RequireTeamRole(RoleOwner, RoleAdmin)).Post("/invitations", h.CreateInvitation)
 		r.With(middle.RequireTeamRole(RoleOwner, RoleAdmin)).Get("/invitations", h.ListInvitations)
 		r.With(middle.RequireTeamRole(RoleOwner, RoleAdmin)).Delete("/invitations/{invitationID}", h.RevokeInvitation)
+
+		// Additional team-scoped resource routers (monitors, incidents, etc.)
+		for _, fn := range teamScoped {
+			fn(r)
+		}
 	})
 
 	return r

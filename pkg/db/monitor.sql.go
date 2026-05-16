@@ -79,65 +79,6 @@ func (q *Queries) DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (i
 	return result.RowsAffected(), nil
 }
 
-const getAllMonitorsByTeamID = `-- name: GetAllMonitorsByTeamID :many
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
-FROM monitors
-WHERE team_id = $1
-ORDER BY updated_at
-    LIMIT $2
-OFFSET $3
-`
-
-type GetAllMonitorsByTeamIDParams struct {
-	TeamID pgtype.UUID
-	Limit  int32
-	Offset int32
-}
-
-type GetAllMonitorsByTeamIDRow struct {
-	ID                 pgtype.UUID
-	UserID             pgtype.UUID
-	TeamID             pgtype.UUID
-	Url                string
-	AlertEmail         pgtype.Text
-	IntervalSec        int32
-	TimeoutSec         int32
-	LatencyThresholdMs pgtype.Int4
-	ExpectedStatus     pgtype.Int4
-	Enabled            bool
-}
-
-func (q *Queries) GetAllMonitorsByTeamID(ctx context.Context, arg GetAllMonitorsByTeamIDParams) ([]GetAllMonitorsByTeamIDRow, error) {
-	rows, err := q.db.Query(ctx, getAllMonitorsByTeamID, arg.TeamID, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetAllMonitorsByTeamIDRow
-	for rows.Next() {
-		var i GetAllMonitorsByTeamIDRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.TeamID,
-			&i.Url,
-			&i.AlertEmail,
-			&i.IntervalSec,
-			&i.TimeoutSec,
-			&i.LatencyThresholdMs,
-			&i.ExpectedStatus,
-			&i.Enabled,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getMonitorByID = `-- name: GetMonitorByID :one
 SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
 FROM monitors
@@ -215,6 +156,83 @@ func (q *Queries) GetMonitorByTeamID(ctx context.Context, arg GetMonitorByTeamID
 		&i.Enabled,
 	)
 	return i, err
+}
+
+const listMonitorsByTeamCursor = `-- name: ListMonitorsByTeamCursor :many
+SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec,
+       latency_threshold_ms, expected_status, enabled, created_at,
+       EXISTS (
+           SELECT 1 FROM monitor_incidents mi
+           WHERE mi.monitor_id = monitors.id AND mi.end_time IS NULL
+       ) AS is_down
+FROM monitors
+WHERE team_id = $1
+  AND (
+    $2::timestamptz IS NULL
+    OR (created_at, id) < ($2::timestamptz, $3::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListMonitorsByTeamCursorParams struct {
+	TeamID  pgtype.UUID
+	Column2 pgtype.Timestamptz
+	Column3 pgtype.UUID
+	Limit   int32
+}
+
+type ListMonitorsByTeamCursorRow struct {
+	ID                 pgtype.UUID
+	UserID             pgtype.UUID
+	TeamID             pgtype.UUID
+	Url                string
+	AlertEmail         pgtype.Text
+	IntervalSec        int32
+	TimeoutSec         int32
+	LatencyThresholdMs pgtype.Int4
+	ExpectedStatus     pgtype.Int4
+	Enabled            bool
+	CreatedAt          pgtype.Timestamptz
+	IsDown             bool
+}
+
+func (q *Queries) ListMonitorsByTeamCursor(ctx context.Context, arg ListMonitorsByTeamCursorParams) ([]ListMonitorsByTeamCursorRow, error) {
+	rows, err := q.db.Query(ctx, listMonitorsByTeamCursor,
+		arg.TeamID,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMonitorsByTeamCursorRow
+	for rows.Next() {
+		var i ListMonitorsByTeamCursorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TeamID,
+			&i.Url,
+			&i.AlertEmail,
+			&i.IntervalSec,
+			&i.TimeoutSec,
+			&i.LatencyThresholdMs,
+			&i.ExpectedStatus,
+			&i.Enabled,
+			&i.CreatedAt,
+			&i.IsDown,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateMonitorStatus = `-- name: UpdateMonitorStatus :execrows

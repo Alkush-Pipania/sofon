@@ -138,13 +138,19 @@ func (s *Service) LogIn(ctx context.Context, data LogInUserCmd) (LogInUserResult
 	return res, nil
 }
 
-func (s *Service) GetProfile(ctx context.Context, userId uuid.UUID) (User, error) {
+func (s *Service) GetProfile(ctx context.Context, userId uuid.UUID) (User, []UserTeam, error) {
 
 	u, err := s.repo.GetUserByID(ctx, userId)
 	if err != nil {
-		return User{}, err
+		return User{}, nil, err
 	}
-	return u, nil
+
+	teams, err := s.repo.GetUserTeams(ctx, userId)
+	if err != nil {
+		return User{}, nil, err
+	}
+
+	return u, teams, nil
 }
 
 func (s *Service) GetUserByID(ctx context.Context, userID uuid.UUID) (User, error) {

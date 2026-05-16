@@ -1,11 +1,18 @@
 package user
 
 type GetProfileResponse struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Email         string `json:"email"`
-	MonitorsCount int32  `json:"monitors_count"`
-	IsPaidUser    bool   `json:"is_paid_user"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Email         string            `json:"email"`
+	MonitorsCount int32             `json:"monitors_count"`
+	IsPaidUser    bool              `json:"is_paid_user"`
+	Teams         []TeamSummary     `json:"teams"`
+}
+
+// TeamSummary is the lightweight team shape embedded in the profile.
+type TeamSummary struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type RegisterRequest struct {

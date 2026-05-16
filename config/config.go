@@ -62,9 +62,6 @@ func setDefaults(v *viper.Viper) {
 
 	// Alert
 	v.SetDefault("alert.worker_count", 10)
-	v.SetDefault("alert.owner_email", "admin@example.com")
-	v.SetDefault("alert.resend_api_key", "")
-	v.SetDefault("alert.kill_switch", true)
 
 	// Result Processor
 	v.SetDefault("result_processor.success_worker_count", 10)
@@ -105,9 +102,6 @@ func validateConfig(cfg *Config) error {
 		return err
 	}
 
-	if !cfg.Alert.ResendKillSwitch && strings.TrimSpace(cfg.Alert.ResendAPIKey) == "" {
-		return errors.New("config validation failed:\n- field 'Config.Alert.ResendAPIKey' failed: required when alert.kill_switch is false\n")
-	}
 	return nil
 }
 

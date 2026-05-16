@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/alkush-pipania/sofon/pkg/apperror"
 	"github.com/alkush-pipania/sofon/pkg/db"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 )
 
@@ -184,39 +186,55 @@ func (r *Repository) Get(ctx context.Context, teamID, monitorID uuid.UUID) (Moni
 	}
 }
 
-func (r *Repository) GetAll(ctx context.Context, teamID uuid.UUID, limit int32, offset int32) ([]Monitor, error) {
+func (r *Repository) GetAll(ctx context.Context, teamID uuid.UUID, opts ListMonitorsOptions) ([]Monitor, bool, error) {
 	const op string = "repo.monitor.get_all"
 
-	monitors, err := r.querier.GetAllMonitorsByTeamID(ctx, db.GetAllMonitorsByTeamIDParams{
-		TeamID: utils.ToPgUUID(teamID),
-		Limit:  limit,
-		Offset: offset,
+	fetchLimit := opts.Limit + 1
+
+	var cursorTS pgtype.Timestamptz
+	var cursorID pgtype.UUID
+	if opts.Cursor != nil {
+		cursorTS = utils.ToPgTimestamptz(opts.Cursor.CreatedAt.UTC())
+		parsedID, err := uuid.Parse(opts.Cursor.MonitorID)
+		if err == nil {
+			cursorID = utils.ToPgUUID(parsedID)
+		}
+	}
+
+	rows, err := r.querier.ListMonitorsByTeamCursor(ctx, db.ListMonitorsByTeamCursorParams{
+		TeamID:  utils.ToPgUUID(teamID),
+		Column2: cursorTS,
+		Column3: cursorID,
+		Limit:   fetchLimit,
 	})
 	if err == nil {
-		if len(monitors) == 0 {
-			return []Monitor{}, nil
-		}
-		m := make([]Monitor, 0, len(monitors))
-		for i := range monitors {
-			mon := &monitors[i]
-			m = append(m, Monitor{
-				ID:                 utils.FromPgUUID(mon.ID),
-				TeamID:             utils.FromPgUUID(mon.TeamID),
-				UserID:             utils.FromPgUUID(mon.UserID),
-				Url:                mon.Url,
-				IntervalSec:        mon.IntervalSec,
-				TimeoutSec:         mon.TimeoutSec,
-				LatencyThresholdMs: utils.FromPgInt4(mon.LatencyThresholdMs),
-				ExpectedStatus:     utils.FromPgInt4(mon.ExpectedStatus),
-				Enabled:            mon.Enabled,
-				AlertEmail:         utils.FromPgText(mon.AlertEmail),
+		monitors := make([]Monitor, 0, len(rows))
+		for i := range rows {
+			row := &rows[i]
+			monitors = append(monitors, Monitor{
+				ID:                 utils.FromPgUUID(row.ID),
+				TeamID:             utils.FromPgUUID(row.TeamID),
+				UserID:             utils.FromPgUUID(row.UserID),
+				Url:                row.Url,
+				IntervalSec:        row.IntervalSec,
+				TimeoutSec:         row.TimeoutSec,
+				LatencyThresholdMs: utils.FromPgInt4(row.LatencyThresholdMs),
+				ExpectedStatus:     utils.FromPgInt4(row.ExpectedStatus),
+				Enabled:            row.Enabled,
+				AlertEmail:         utils.FromPgText(row.AlertEmail),
+				CreatedAt:          utils.FromPgTimestamptz(row.CreatedAt),
+				IsDown:             row.IsDown,
 			})
 		}
-		return m, nil
+		hasMore := len(monitors) > int(opts.Limit)
+		if hasMore {
+			monitors = monitors[:opts.Limit]
+		}
+		return monitors, hasMore, nil
 	}
 
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return []Monitor{}, &apperror.Error{
+		return nil, false, &apperror.Error{
 			Kind:    apperror.RequestTimeout,
 			Op:      op,
 			Message: "request cancelled or timed out",
@@ -225,7 +243,7 @@ func (r *Repository) GetAll(ctx context.Context, teamID uuid.UUID, limit int32, 
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return []Monitor{}, &apperror.Error{
+		return nil, false, &apperror.Error{
 			Kind:    apperror.DatabaseErr,
 			Op:      op,
 			Message: "internal server error",
@@ -233,7 +251,7 @@ func (r *Repository) GetAll(ctx context.Context, teamID uuid.UUID, limit int32, 
 		}
 	}
 
-	return []Monitor{}, &apperror.Error{
+	return nil, false, &apperror.Error{
 		Kind:    apperror.Internal,
 		Op:      op,
 		Message: "internal server error",
@@ -283,6 +301,18 @@ func (r *Repository) Delete(ctx context.Context, teamID, monitorID uuid.UUID) er
 		Message: "internal server error",
 		Err:     err,
 	}
+}
+
+func (r *Repository) CloseOpenIncident(ctx context.Context, monitorID uuid.UUID) error {
+	const op = "repo.monitor.close_open_incident"
+	_, err := r.querier.CloseMonitorIncident(ctx, db.CloseMonitorIncidentParams{
+		MonitorID: utils.ToPgUUID(monitorID),
+		EndTime:   utils.ToPgTimestamptz(time.Now()),
+	})
+	if err == nil || errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	return utils.WrapRepoError(op, err, r.log)
 }
 
 func (r *Repository) SetEnabled(ctx context.Context, teamID, monitorID uuid.UUID, enabled bool) error {

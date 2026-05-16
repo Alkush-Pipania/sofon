@@ -1,12 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useTeamStore } from "@/store/team-store";
-
+// Teams are now seeded by AuthGuard via the profile endpoint.
+// This component is kept as a no-op to avoid breaking the layout import.
 export function TeamLoader() {
-    const fetchTeams = useTeamStore((s) => s.fetchTeams);
-    useEffect(() => {
-        fetchTeams();
-    }, [fetchTeams]);
     return null;
 }

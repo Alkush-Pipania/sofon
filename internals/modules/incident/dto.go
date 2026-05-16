@@ -18,6 +18,7 @@ type IncidentResponse struct {
 	CreatedAt   string               `json:"created_at"`
 	IsActive    bool                 `json:"is_active"`
 	DurationSec int64                `json:"duration_sec"`
+	Reason      string               `json:"reason"`
 	LatestAlert *LatestAlertResponse `json:"latest_alert,omitempty"`
 }
 

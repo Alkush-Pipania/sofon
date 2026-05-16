@@ -29,9 +29,6 @@ executor:
 # Alerting
 alert:
   worker_count: 10
-  owner_email: "admin@example.com"
-  resend_api_key: ""          # set when kill_switch is false
-  kill_switch: true           # true => disable all outgoing alert emails
 
 # Result Processor
 result_processor:

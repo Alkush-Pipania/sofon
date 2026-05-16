@@ -9,11 +9,13 @@ import (
 	"github.com/alkush-pipania/sofon/internals/modules/executor"
 	"github.com/alkush-pipania/sofon/internals/modules/incident"
 	"github.com/alkush-pipania/sofon/internals/modules/monitor"
+	"github.com/alkush-pipania/sofon/internals/modules/plugin"
 	"github.com/alkush-pipania/sofon/internals/modules/result"
 	"github.com/alkush-pipania/sofon/internals/modules/scheduler"
 	"github.com/alkush-pipania/sofon/internals/modules/team"
 	"github.com/alkush-pipania/sofon/internals/modules/user"
 	"github.com/alkush-pipania/sofon/internals/security"
+	"github.com/alkush-pipania/sofon/pkg/crypto"
 	"github.com/alkush-pipania/sofon/pkg/redis"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +31,7 @@ type Container struct {
 	incidentHandler *incident.Handler
 	monitorHandler  *monitor.Handler
 	teamHandler     *team.Handler
+	pluginHandler   *plugin.Handler
 	authMW          *middle.AuthMiddleware
 	teamAccessMW    *middle.TeamAccessMiddleware
 	Scheduler       *scheduler.Scheduler
@@ -56,15 +59,21 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 	monitorIncidentRepo := result.NewMonitorIncidentRepo(db, logger)
 	userRepo := user.NewRepository(db, logger)
 
+	enc := crypto.New(cfg.Auth.Secret)
+
 	userService := user.NewService(userRepo, tokenSvc)
 	monitorSvc := monitor.NewService(monitorRepo, redisClient, userService, logger)
 	incidentAPIRepo := incident.NewRepository(db, logger)
 	incidentSvc := incident.NewService(incidentAPIRepo)
 
+	pluginRepo := plugin.NewRepository(db, enc, logger)
+	pluginSvc := plugin.NewService(pluginRepo)
+	pluginHandler := plugin.NewHandler(pluginSvc, logger)
+
 	sch := scheduler.NewScheduler(ctx, &cfg.Scheduler, jobChan, redisClient, logger)
 	exec := executor.NewExecutor(ctx, &cfg.Executor, jobChan, resultChan, monitorSvc, logger)
 	resultPro := result.NewResultProcessor(ctx, &cfg.ResultProcessor, redisClient, resultChan, monitorIncidentRepo, monitorSvc, alertChan, logger)
-	alertSvc := alert.NewAlertService(&cfg.Alert, db, alertChan, logger)
+	alertSvc := alert.NewAlertService(&cfg.Alert, db, pluginRepo, redisClient, alertChan, logger)
 
 	teamRepo := team.NewRepository(db, logger)
 	teamSvc := team.NewService(teamRepo, cfg.App.AppURL)
@@ -88,6 +97,7 @@ func NewContainer(ctx context.Context, cfg *config.Config, logger *zerolog.Logge
 		teamAccessMW:    teamAccessMW,
 		monitorHandler:  monitorHandler,
 		teamHandler:     teamHandler,
+		pluginHandler:   pluginHandler,
 		Scheduler:       sch,
 		Executor:        exec,
 		ResultPro:       resultPro,
