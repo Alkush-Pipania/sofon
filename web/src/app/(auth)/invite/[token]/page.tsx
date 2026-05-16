@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { InviteForm } from "./invite-form";
 import { serverApiBase } from "@/lib/server-api";
+
+export const metadata: Metadata = {
+    title: "Accept Invitation",
+    description: "You've been invited to join a team on Sofon.",
+};
 
 export const dynamic = "force-dynamic";
 
