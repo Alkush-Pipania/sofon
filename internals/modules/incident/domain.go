@@ -7,20 +7,22 @@ import (
 )
 
 type Incident struct {
-	ID          string
-	MonitorID   string
-	MonitorURL  string
-	StartTime   time.Time
-	EndTime     *time.Time
-	Alerted     bool
-	HTTPStatus  int32
-	LatencyMs   int32
-	CreatedAt   time.Time
-	IsActive    bool
-	DurationSec int64
-	AlertStatus string
-	AlertEmail  string
-	AlertSentAt *time.Time
+	ID                 string
+	MonitorID          string
+	MonitorURL         string
+	StartTime          time.Time
+	EndTime            *time.Time
+	Alerted            bool
+	HTTPStatus         int32
+	LatencyMs          int32
+	CreatedAt          time.Time
+	IsActive           bool
+	DurationSec        int64
+	AlertStatus        string
+	AlertEmail         string
+	AlertSentAt        *time.Time
+	ExpectedStatus     int32
+	LatencyThresholdMs int32
 }
 
 type Cursor struct {

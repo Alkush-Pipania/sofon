@@ -321,3 +321,21 @@ func (r *repository) SetRegistrationsEnabled(ctx context.Context, enabled bool) 
 	}
 	return nil
 }
+
+func (r *repository) GetUserTeams(ctx context.Context, userID uuid.UUID) ([]UserTeam, error) {
+	const op = "repo.user.get_user_teams"
+
+	rows, err := r.querier.ListTeamsByUserID(ctx, utils.ToPgUUID(userID))
+	if err != nil {
+		return nil, utils.WrapRepoError(op, err, r.logger)
+	}
+
+	teams := make([]UserTeam, len(rows))
+	for i, row := range rows {
+		teams[i] = UserTeam{
+			ID:   utils.FromPgUUID(row.ID),
+			Name: row.Name,
+		}
+	}
+	return teams, nil
+}

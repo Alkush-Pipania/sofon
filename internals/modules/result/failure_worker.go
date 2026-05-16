@@ -107,6 +107,7 @@ func (rp *ResultProcessor) handleFailure(r executor.HTTPResult) {
 		IncidentID: incidentID,
 		Type:       alert.AlertTypeDown,
 		MonitorID:  r.MonitorID,
+		TeamID:     r.TeamID,
 		MonitorURL: r.MonitorURL,
 		AlertEmail: r.AlertEmail,
 		Reason:     r.Reason,

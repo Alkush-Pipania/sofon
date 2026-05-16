@@ -1,7 +1,7 @@
 package incident
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,14 +34,13 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	userID, ok := userIDFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
 	limit := int32(20)
-
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		l, err := strconv.ParseInt(limitStr, 10, 32)
 		if err != nil || l <= 0 || l > 100 {
@@ -111,7 +110,7 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 		cursor = decoded
 	}
 
-	page, err := h.service.ListByUserID(ctx, userID, ListIncidentsOptions{
+	page, err := h.service.ListByTeamID(ctx, tm.TeamID, ListIncidentsOptions{
 		Limit:  limit,
 		Cursor: cursor,
 		Filters: ListFilters{
@@ -159,39 +158,45 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	reqID := middleware.GetReqID(ctx)
 
-	userID, ok := userIDFromContext(ctx)
+	tm, ok := middle.TeamMemberFromContext(ctx)
 	if !ok {
-		utils.WriteError(w, http.StatusUnauthorized, reqID, apperror.Unauthorised, "user unauthorised")
+		utils.WriteError(w, http.StatusForbidden, reqID, apperror.Forbidden, "team access required")
 		return
 	}
 
-	incidentIDStr := chi.URLParam(r, "incidentID")
-	incidentID, err := uuid.Parse(incidentIDStr)
+	incidentID, err := uuid.Parse(chi.URLParam(r, "incidentID"))
 	if err != nil {
 		utils.WriteError(w, http.StatusBadRequest, reqID, apperror.InvalidInput, "invalid incident id")
 		return
 	}
 
-	incident, err := h.service.GetByIDAndUserID(ctx, incidentID, userID)
+	inc, err := h.service.GetByIDAndTeamID(ctx, incidentID, tm.TeamID)
 	if err != nil {
 		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("failed to get incident")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, reqID, "incident retrieved", toIncidentResponse(&incident))
+	utils.WriteJSON(w, http.StatusOK, reqID, "incident retrieved", toIncidentResponse(&inc))
 }
 
-func userIDFromContext(ctx context.Context) (uuid.UUID, bool) {
-	claims, ok := middle.UserFromContext(ctx)
-	if !ok {
-		return uuid.Nil, false
+func deriveReason(i *Incident) string {
+	if i.HTTPStatus == 0 {
+		return "No response (timeout or connection failure)"
 	}
-	id, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return uuid.Nil, false
+	statusMismatch := i.ExpectedStatus > 0 && i.HTTPStatus != i.ExpectedStatus
+	latencyBreach := i.LatencyThresholdMs > 0 && i.LatencyMs > i.LatencyThresholdMs
+	switch {
+	case statusMismatch && latencyBreach:
+		return fmt.Sprintf("Status mismatch (got %d, expected %d) and latency threshold exceeded (%dms > %dms)",
+			i.HTTPStatus, i.ExpectedStatus, i.LatencyMs, i.LatencyThresholdMs)
+	case statusMismatch:
+		return fmt.Sprintf("Unexpected status code (got %d, expected %d)", i.HTTPStatus, i.ExpectedStatus)
+	case latencyBreach:
+		return fmt.Sprintf("Latency threshold exceeded (%dms > %dms)", i.LatencyMs, i.LatencyThresholdMs)
+	default:
+		return fmt.Sprintf("Unexpected status code (%d)", i.HTTPStatus)
 	}
-	return id, true
 }
 
 func toIncidentResponse(i *Incident) IncidentResponse {
@@ -230,6 +235,7 @@ func toIncidentResponse(i *Incident) IncidentResponse {
 		CreatedAt:   created,
 		IsActive:    i.IsActive,
 		DurationSec: i.DurationSec,
+		Reason:      deriveReason(i),
 		LatestAlert: latestAlert,
 	}
 }

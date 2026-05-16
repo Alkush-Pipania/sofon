@@ -13,19 +13,10 @@ const (
 )
 
 type Team struct {
-	ID   int
-	Name string
-}
-
-type Invitation struct {
-	ID         uuid.UUID
-	Email      string
-	Role       string
-	Token      string
-	ExpiresAt  time.Time
-	AcceptedAt *time.Time
-	InvitedBy  uuid.UUID
-	CreatedAt  time.Time
+	ID        uuid.UUID
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Member struct {
@@ -37,7 +28,25 @@ type Member struct {
 	CreatedAt time.Time
 }
 
+type Invitation struct {
+	ID         uuid.UUID
+	TeamID     uuid.UUID
+	Email      string
+	Role       string
+	Token      string
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+	InvitedBy  uuid.UUID
+	CreatedAt  time.Time
+}
+
+type CreateTeamCmd struct {
+	Name          string
+	CreatorUserID uuid.UUID
+}
+
 type CreateInvitationCmd struct {
+	TeamID    uuid.UUID
 	Email     string
 	Role      string
 	InvitedBy uuid.UUID

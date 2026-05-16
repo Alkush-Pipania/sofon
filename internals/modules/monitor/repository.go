@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/alkush-pipania/sofon/pkg/apperror"
 	"github.com/alkush-pipania/sofon/pkg/db"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 )
 
@@ -30,6 +32,7 @@ func (r *Repository) Create(ctx context.Context, monitor CreateMonitor) (uuid.UU
 
 	monitorID, err := r.querier.CreateMonitor(ctx, db.CreateMonitorParams{
 		UserID:             utils.ToPgUUID(monitor.UserID),
+		TeamID:             utils.ToPgUUID(monitor.TeamID),
 		Url:                monitor.Url,
 		IntervalSec:        monitor.IntervalSec,
 		TimeoutSec:         monitor.TimeoutSec,
@@ -66,7 +69,6 @@ func (r *Repository) Create(ctx context.Context, monitor CreateMonitor) (uuid.UU
 		}
 	}
 
-	// other errors
 	return uuid.UUID{}, &apperror.Error{
 		Kind:    apperror.Internal,
 		Op:      op,
@@ -82,6 +84,7 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 	if err == nil {
 		return Monitor{
 			ID:                 utils.FromPgUUID(monitor.ID),
+			TeamID:             utils.FromPgUUID(monitor.TeamID),
 			UserID:             utils.FromPgUUID(monitor.UserID),
 			Url:                monitor.Url,
 			IntervalSec:        monitor.IntervalSec,
@@ -92,9 +95,7 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 			AlertEmail:         utils.FromPgText(monitor.AlertEmail),
 		}, nil
 	}
-	// handle errors
 
-	// Context errors
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return Monitor{}, &apperror.Error{
 			Kind:    apperror.RequestTimeout,
@@ -103,7 +104,6 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 		}
 	}
 
-	// if no row present
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Monitor{}, &apperror.Error{
 			Kind:    apperror.NotFound,
@@ -112,7 +112,6 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 		}
 	}
 
-	// postgres errors
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return Monitor{}, &apperror.Error{
@@ -123,7 +122,6 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 		}
 	}
 
-	// other errors
 	return Monitor{}, &apperror.Error{
 		Kind:    apperror.Internal,
 		Op:      op,
@@ -132,16 +130,17 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 	}
 }
 
-func (r *Repository) Get(ctx context.Context, userID, monitorID uuid.UUID) (Monitor, error) {
+func (r *Repository) Get(ctx context.Context, teamID, monitorID uuid.UUID) (Monitor, error) {
 	const op string = "repo.monitor.get"
 
-	monitor, err := r.querier.GetMonitor(ctx, db.GetMonitorParams{
+	monitor, err := r.querier.GetMonitorByTeamID(ctx, db.GetMonitorByTeamIDParams{
 		ID:     utils.ToPgUUID(monitorID),
-		UserID: utils.ToPgUUID(userID),
+		TeamID: utils.ToPgUUID(teamID),
 	})
 	if err == nil {
 		return Monitor{
 			ID:                 utils.FromPgUUID(monitor.ID),
+			TeamID:             utils.FromPgUUID(monitor.TeamID),
 			UserID:             utils.FromPgUUID(monitor.UserID),
 			Url:                monitor.Url,
 			IntervalSec:        monitor.IntervalSec,
@@ -153,9 +152,6 @@ func (r *Repository) Get(ctx context.Context, userID, monitorID uuid.UUID) (Moni
 		}, nil
 	}
 
-	// handle errors
-
-	// Context errors
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return Monitor{}, &apperror.Error{
 			Kind:    apperror.RequestTimeout,
@@ -164,7 +160,6 @@ func (r *Repository) Get(ctx context.Context, userID, monitorID uuid.UUID) (Moni
 		}
 	}
 
-	// if no row present
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Monitor{}, &apperror.Error{
 			Kind:    apperror.NotFound,
@@ -173,7 +168,6 @@ func (r *Repository) Get(ctx context.Context, userID, monitorID uuid.UUID) (Moni
 		}
 	}
 
-	// postgres errors
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return Monitor{}, &apperror.Error{
@@ -184,7 +178,6 @@ func (r *Repository) Get(ctx context.Context, userID, monitorID uuid.UUID) (Moni
 		}
 	}
 
-	// other errors
 	return Monitor{}, &apperror.Error{
 		Kind:    apperror.Internal,
 		Op:      op,
@@ -193,49 +186,64 @@ func (r *Repository) Get(ctx context.Context, userID, monitorID uuid.UUID) (Moni
 	}
 }
 
-func (r *Repository) GetAll(ctx context.Context, userID uuid.UUID, limit int32, offset int32) ([]Monitor, error) {
+func (r *Repository) GetAll(ctx context.Context, teamID uuid.UUID, opts ListMonitorsOptions) ([]Monitor, bool, error) {
 	const op string = "repo.monitor.get_all"
 
-	monitors, err := r.querier.GetAllMonitorByUserID(ctx, db.GetAllMonitorByUserIDParams{
-		UserID: utils.ToPgUUID(userID),
-		Limit:  limit,
-		Offset: offset,
-	})
-	if err == nil {
-		if len(monitors) == 0 {
-			return []Monitor{}, nil
+	fetchLimit := opts.Limit + 1
+
+	var cursorTS pgtype.Timestamptz
+	var cursorID pgtype.UUID
+	if opts.Cursor != nil {
+		cursorTS = utils.ToPgTimestamptz(opts.Cursor.CreatedAt.UTC())
+		parsedID, err := uuid.Parse(opts.Cursor.MonitorID)
+		if err == nil {
+			cursorID = utils.ToPgUUID(parsedID)
 		}
-		m := make([]Monitor, 0, len(monitors))
-		for i := range monitors {
-			mon := &monitors[i]
-			m = append(m, Monitor{
-				ID:                 utils.FromPgUUID(mon.ID),
-				UserID:             utils.FromPgUUID(mon.UserID),
-				Url:                mon.Url,
-				IntervalSec:        mon.IntervalSec,
-				TimeoutSec:         mon.TimeoutSec,
-				LatencyThresholdMs: utils.FromPgInt4(mon.LatencyThresholdMs),
-				ExpectedStatus:     utils.FromPgInt4(mon.ExpectedStatus),
-				Enabled:            mon.Enabled,
-				AlertEmail:         utils.FromPgText(mon.AlertEmail),
-			})
-		}
-		return m, nil
 	}
 
-	// Context errors
+	rows, err := r.querier.ListMonitorsByTeamCursor(ctx, db.ListMonitorsByTeamCursorParams{
+		TeamID:  utils.ToPgUUID(teamID),
+		Column2: cursorTS,
+		Column3: cursorID,
+		Limit:   fetchLimit,
+	})
+	if err == nil {
+		monitors := make([]Monitor, 0, len(rows))
+		for i := range rows {
+			row := &rows[i]
+			monitors = append(monitors, Monitor{
+				ID:                 utils.FromPgUUID(row.ID),
+				TeamID:             utils.FromPgUUID(row.TeamID),
+				UserID:             utils.FromPgUUID(row.UserID),
+				Url:                row.Url,
+				IntervalSec:        row.IntervalSec,
+				TimeoutSec:         row.TimeoutSec,
+				LatencyThresholdMs: utils.FromPgInt4(row.LatencyThresholdMs),
+				ExpectedStatus:     utils.FromPgInt4(row.ExpectedStatus),
+				Enabled:            row.Enabled,
+				AlertEmail:         utils.FromPgText(row.AlertEmail),
+				CreatedAt:          utils.FromPgTimestamptz(row.CreatedAt),
+				IsDown:             row.IsDown,
+			})
+		}
+		hasMore := len(monitors) > int(opts.Limit)
+		if hasMore {
+			monitors = monitors[:opts.Limit]
+		}
+		return monitors, hasMore, nil
+	}
+
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return []Monitor{}, &apperror.Error{
+		return nil, false, &apperror.Error{
 			Kind:    apperror.RequestTimeout,
 			Op:      op,
 			Message: "request cancelled or timed out",
 		}
 	}
 
-	// postgres errors
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return []Monitor{}, &apperror.Error{
+		return nil, false, &apperror.Error{
 			Kind:    apperror.DatabaseErr,
 			Op:      op,
 			Message: "internal server error",
@@ -243,22 +251,20 @@ func (r *Repository) GetAll(ctx context.Context, userID uuid.UUID, limit int32, 
 		}
 	}
 
-	// other errors
-	return []Monitor{}, &apperror.Error{
+	return nil, false, &apperror.Error{
 		Kind:    apperror.Internal,
 		Op:      op,
 		Message: "internal server error",
 		Err:     err,
 	}
-
 }
 
-func (r *Repository) Delete(ctx context.Context, userID, monitorID uuid.UUID) error {
+func (r *Repository) Delete(ctx context.Context, teamID, monitorID uuid.UUID) error {
 	const op string = "repo.monitor.delete"
 
 	rows, err := r.querier.DeleteMonitor(ctx, db.DeleteMonitorParams{
 		ID:     utils.ToPgUUID(monitorID),
-		UserID: utils.ToPgUUID(userID),
+		TeamID: utils.ToPgUUID(teamID),
 	})
 	if err == nil {
 		if rows == 0 {
@@ -297,12 +303,24 @@ func (r *Repository) Delete(ctx context.Context, userID, monitorID uuid.UUID) er
 	}
 }
 
-func (r *Repository) SetEnabled(ctx context.Context, userID, monitorID uuid.UUID, enabled bool) error {
+func (r *Repository) CloseOpenIncident(ctx context.Context, monitorID uuid.UUID) error {
+	const op = "repo.monitor.close_open_incident"
+	_, err := r.querier.CloseMonitorIncident(ctx, db.CloseMonitorIncidentParams{
+		MonitorID: utils.ToPgUUID(monitorID),
+		EndTime:   utils.ToPgTimestamptz(time.Now()),
+	})
+	if err == nil || errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	return utils.WrapRepoError(op, err, r.log)
+}
+
+func (r *Repository) SetEnabled(ctx context.Context, teamID, monitorID uuid.UUID, enabled bool) error {
 	const op string = "repo.monitor.enable_disable_monitor"
 
 	rows, err := r.querier.UpdateMonitorStatus(ctx, db.UpdateMonitorStatusParams{
 		ID:      utils.ToPgUUID(monitorID),
-		UserID:  utils.ToPgUUID(userID),
+		TeamID:  utils.ToPgUUID(teamID),
 		Enabled: enabled,
 	})
 	if err == nil {
@@ -316,7 +334,6 @@ func (r *Repository) SetEnabled(ctx context.Context, userID, monitorID uuid.UUID
 		return nil
 	}
 
-	// Context errors
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return &apperror.Error{
 			Kind:    apperror.RequestTimeout,
@@ -325,7 +342,6 @@ func (r *Repository) SetEnabled(ctx context.Context, userID, monitorID uuid.UUID
 		}
 	}
 
-	// postgres errors
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return &apperror.Error{
@@ -336,7 +352,6 @@ func (r *Repository) SetEnabled(ctx context.Context, userID, monitorID uuid.UUID
 		}
 	}
 
-	// other errors
 	return &apperror.Error{
 		Kind:    apperror.Internal,
 		Op:      op,

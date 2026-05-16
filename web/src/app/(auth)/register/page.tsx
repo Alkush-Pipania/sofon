@@ -1,8 +1,14 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { RegisterForm } from "./register-form";
 import { serverApiBase } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+    title: "Create Account",
+    description: "Set up your Sofon account and start monitoring your services.",
+};
 
 async function getRegistrationsEnabled(): Promise<boolean> {
     try {

@@ -97,7 +97,7 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
                 {trigger ?? (
-                    <Button className="gap-1.5 bg-[#3B8CF0] text-white hover:bg-[#3B8CF0]/90">
+                    <Button className="gap-1.5 bg-white text-black hover:bg-white/90">
                         <Plus className="h-4 w-4" />
                         New
                     </Button>

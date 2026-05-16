@@ -204,23 +204,33 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.service.GetProfile(ctx, userID)
+	user, teams, err := h.service.GetProfile(ctx, userID)
 	if err != nil {
 		h.logger.Error().
 			Str("op", op).
 			Str("req_id", reqID).
 			Err(err).
-			Msg("login error")
+			Msg("get profile error")
 		utils.FromAppError(w, reqID, err)
 		return
 	}
+
+	teamSummaries := make([]TeamSummary, len(teams))
+	for i, t := range teams {
+		teamSummaries[i] = TeamSummary{
+			ID:   t.ID.String(),
+			Name: t.Name,
+		}
+	}
+
 	u := GetProfileResponse{
 		ID:            user.ID.String(),
 		Name:          user.Name,
 		Email:         user.Email,
 		MonitorsCount: user.MonitorsCount,
 		IsPaidUser:    user.IsPaidUser,
+		Teams:         teamSummaries,
 	}
 
-	utils.WriteJSON(w, http.StatusOK, reqID, "profile retrived", u)
+	utils.WriteJSON(w, http.StatusOK, reqID, "profile retrieved", u)
 }

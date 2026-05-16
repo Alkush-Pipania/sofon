@@ -1,8 +1,14 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { SignInForm } from "./signin-form";
 import { serverApiBase } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+    title: "Sign In",
+    description: "Sign in to your Sofon account to manage your uptime monitors.",
+};
 
 async function getRegistrationsEnabled(): Promise<boolean> {
     try {

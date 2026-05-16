@@ -143,9 +143,10 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 
 		return HTTPResult{
 			MonitorID:   monitor.ID,
+			TeamID:      monitor.TeamID,
 			MonitorURL:  monitor.Url,
 			Success:     false,
-			Reason:      "INVALID_REQUEST", // check with this in result processor
+			Reason:      "INVALID_REQUEST",
 			Retryable:   false,
 			CheckedAt:   time.Now(),
 			IntervalSec: monitor.IntervalSec,
@@ -159,6 +160,7 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 		reason, isRetryable := ew.classifyError(err)
 		return HTTPResult{
 			MonitorID:   monitor.ID,
+			TeamID:      monitor.TeamID,
 			MonitorURL:  monitor.Url,
 			Success:     false,
 			Status:      http.StatusServiceUnavailable,
@@ -203,6 +205,7 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 
 	return HTTPResult{
 		MonitorID:   monitor.ID,
+		TeamID:      monitor.TeamID,
 		MonitorURL:  monitor.Url,
 		Status:      resp.StatusCode,
 		LatencyMs:   latency,

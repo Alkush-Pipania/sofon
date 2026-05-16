@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
+import { TeamLoader } from "@/components/layout/team-loader";
 
 export default function MainLayout({
     children,
@@ -9,6 +10,7 @@ export default function MainLayout({
 }>) {
     return (
         <AuthGuard>
+            <TeamLoader />
             <SidebarProvider>
                 <AppSidebar />
                 <SidebarInset>
@@ -23,4 +25,3 @@ export default function MainLayout({
         </AuthGuard>
     );
 }
-

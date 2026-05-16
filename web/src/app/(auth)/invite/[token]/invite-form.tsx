@@ -42,7 +42,7 @@ export function InviteForm({ token, invite }: { token: string; invite: InviteDat
     const onSubmit = async (data: AcceptForm) => {
         setApiError(null);
         try {
-            await post(ENDPOINTS.TEAM.ACCEPT_INVITATION, { token, name: data.name, password: data.password });
+            await post(ENDPOINTS.TEAMS.ACCEPT_INVITATION, { token, name: data.name, password: data.password });
             setSuccess(true);
             setTimeout(() => router.push("/signin"), 2000);
         } catch (err) {

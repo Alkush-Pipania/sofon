@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { get, post, patch as patchReq, del } from "@/service/api";
 import { ENDPOINTS } from "@/service/endpoints";
+import { useTeamStore } from "@/store/team-store";
 
 // ── Types ───────────────────────────────────────────
 export interface Monitor {
@@ -12,15 +13,16 @@ export interface Monitor {
     latency_threshold_ms: number | null;
     expected_status: number | null;
     enabled: boolean;
+    is_down: boolean;
 }
 
 interface MonitorsResponse {
     success: boolean;
     message: string;
     data: {
-        user_id: string;
         limit: number;
-        offset: number;
+        has_more: boolean;
+        next_cursor: string | null;
         monitors: Monitor[];
     };
 }
@@ -45,48 +47,58 @@ interface CreateMonitorResponse {
 // ── Store ───────────────────────────────────────────
 interface MonitorState {
     monitors: Monitor[];
-    totalCount: number;
     limit: number;
-    offset: number;
+    hasMore: boolean;
+    hasPrev: boolean;
+    nextCursor: string | null;
+    pageStack: string[];
     loading: boolean;
     creating: boolean;
     updatingMonitorId: string | null;
     error: string | null;
 
-    fetchMonitors: (offset?: number, limit?: number) => Promise<void>;
+    fetchMonitors: (cursor?: string) => Promise<void>;
     createMonitor: (data: CreateMonitorRequest) => Promise<void>;
     updateMonitorStatus: (monitorID: string, enable: boolean) => Promise<void>;
     deleteMonitor: (monitorID: string) => Promise<void>;
-    setOffset: (offset: number) => void;
+    goNext: () => void;
+    goPrev: () => void;
+}
+
+function currentTeamId(): string | null {
+    return useTeamStore.getState().currentTeam?.id ?? null;
 }
 
 export const useMonitorStore = create<MonitorState>((set, getState) => ({
     monitors: [],
-    totalCount: 0,
     limit: 10,
-    offset: 0,
+    hasMore: false,
+    hasPrev: false,
+    nextCursor: null,
+    pageStack: [],
     loading: false,
     creating: false,
     updatingMonitorId: null,
     error: null,
 
-    fetchMonitors: async (offset?: number, limit?: number) => {
-        const state = getState();
-        const o = offset ?? state.offset;
-        const l = limit ?? state.limit;
+    fetchMonitors: async (cursor?: string) => {
+        const teamId = currentTeamId();
+        if (!teamId) return;
 
+        const { limit } = getState();
         set({ loading: true, error: null });
 
         try {
-            const res = await get<MonitorsResponse>(
-                `${ENDPOINTS.MONITORS.LIST}?offset=${o}&limit=${l}`,
-            );
+            const url = cursor
+                ? `${ENDPOINTS.MONITORS.LIST(teamId)}?limit=${limit}&cursor=${cursor}`
+                : `${ENDPOINTS.MONITORS.LIST(teamId)}?limit=${limit}`;
+
+            const res = await get<MonitorsResponse>(url);
 
             set({
                 monitors: res.data.monitors ?? [],
-                totalCount: res.data.monitors?.length ?? 0, // backend doesn't return total yet, use array length
-                offset: o,
-                limit: l,
+                hasMore: res.data.has_more ?? false,
+                nextCursor: res.data.next_cursor ?? null,
                 loading: false,
             });
         } catch (err: unknown) {
@@ -96,28 +108,53 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
         }
     },
 
+    goNext: () => {
+        const { nextCursor, pageStack, fetchMonitors } = getState();
+        if (!nextCursor) return;
+        set((state) => ({
+            pageStack: [...state.pageStack, nextCursor],
+            hasPrev: true,
+        }));
+        fetchMonitors(nextCursor);
+    },
+
+    goPrev: () => {
+        const { pageStack, fetchMonitors } = getState();
+        if (pageStack.length === 0) return;
+        const newStack = pageStack.slice(0, -1);
+        const prevCursor = newStack[newStack.length - 1];
+        set({ pageStack: newStack, hasPrev: newStack.length > 0 });
+        fetchMonitors(prevCursor);
+    },
+
     createMonitor: async (data: CreateMonitorRequest) => {
+        const teamId = currentTeamId();
+        if (!teamId) throw new Error("No team selected");
+
         set({ creating: true, error: null });
 
         try {
-            await post<CreateMonitorResponse>(ENDPOINTS.MONITORS.CREATE, data);
-            set({ creating: false });
-            // Refresh the list
+            await post<CreateMonitorResponse>(ENDPOINTS.MONITORS.CREATE(teamId), data);
+            // Reset to first page after creating so the new monitor appears
+            set({ creating: false, pageStack: [], hasPrev: false });
             await getState().fetchMonitors();
         } catch (err: unknown) {
             const message =
                 err instanceof Error ? err.message : "Failed to create monitor";
             set({ creating: false, error: message });
-            throw err; // re-throw so the dialog can show the error
+            throw err;
         }
     },
 
     updateMonitorStatus: async (monitorID: string, enable: boolean) => {
+        const teamId = currentTeamId();
+        if (!teamId) throw new Error("No team selected");
+
         set({ updatingMonitorId: monitorID, error: null });
 
         try {
             await patchReq<{ success: boolean; message: string; data: string }>(
-                ENDPOINTS.MONITORS.UPDATE(monitorID),
+                ENDPOINTS.MONITORS.UPDATE(teamId, monitorID),
                 { enable },
             );
 
@@ -136,16 +173,18 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
     },
 
     deleteMonitor: async (monitorID: string) => {
+        const teamId = currentTeamId();
+        if (!teamId) throw new Error("No team selected");
+
         set({ updatingMonitorId: monitorID, error: null });
 
         try {
             await del<{ success: boolean; message: string }>(
-                ENDPOINTS.MONITORS.DELETE(monitorID),
+                ENDPOINTS.MONITORS.DELETE(teamId, monitorID),
             );
 
             set((state) => ({
                 monitors: state.monitors.filter((m) => m.id !== monitorID),
-                totalCount: state.totalCount - 1,
                 updatingMonitorId: null,
             }));
         } catch (err: unknown) {
@@ -156,8 +195,4 @@ export const useMonitorStore = create<MonitorState>((set, getState) => ({
         }
     },
 
-    setOffset: (offset: number) => {
-        set({ offset });
-        getState().fetchMonitors(offset);
-    },
 }));

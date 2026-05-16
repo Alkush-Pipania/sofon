@@ -14,8 +14,8 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) ListByUserID(ctx context.Context, userID uuid.UUID, opts ListIncidentsOptions) (ListIncidentsPage, error) {
-	incidents, hasMore, err := s.repo.ListByUserID(ctx, userID, opts)
+func (s *Service) ListByTeamID(ctx context.Context, teamID uuid.UUID, opts ListIncidentsOptions) (ListIncidentsPage, error) {
+	incidents, hasMore, err := s.repo.ListByTeamID(ctx, teamID, opts)
 	if err != nil {
 		return ListIncidentsPage{}, err
 	}
@@ -42,6 +42,6 @@ func (s *Service) ListByUserID(ctx context.Context, userID uuid.UUID, opts ListI
 	}, nil
 }
 
-func (s *Service) GetByIDAndUserID(ctx context.Context, incidentID uuid.UUID, userID uuid.UUID) (Incident, error) {
-	return s.repo.GetByIDAndUserID(ctx, incidentID, userID)
+func (s *Service) GetByIDAndTeamID(ctx context.Context, incidentID uuid.UUID, teamID uuid.UUID) (Incident, error) {
+	return s.repo.GetByIDAndTeamID(ctx, incidentID, teamID)
 }

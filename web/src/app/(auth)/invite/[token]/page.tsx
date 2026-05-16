@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { InviteForm } from "./invite-form";
 import { serverApiBase } from "@/lib/server-api";
+
+export const metadata: Metadata = {
+    title: "Accept Invitation",
+    description: "You've been invited to join a team on Sofon.",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +20,7 @@ interface InviteData {
 async function getInvite(token: string): Promise<InviteData | null> {
     try {
         const res = await fetch(
-            `${serverApiBase()}/api/v1/team/invitations/${token}`,
+            `${serverApiBase()}/api/v1/teams/invitations/${token}`,
             { cache: "no-store" },
         );
         if (!res.ok) return null;

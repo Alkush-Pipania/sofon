@@ -7,29 +7,90 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getTeam = `-- name: GetTeam :one
-SELECT id, name FROM team WHERE id = 1
+const createTeam = `-- name: CreateTeam :one
+INSERT INTO teams (name)
+VALUES ($1)
+RETURNING id, name, created_at, updated_at
 `
 
-type GetTeamRow struct {
-	ID   int32
-	Name string
-}
-
-func (q *Queries) GetTeam(ctx context.Context) (GetTeamRow, error) {
-	row := q.db.QueryRow(ctx, getTeam)
-	var i GetTeamRow
-	err := row.Scan(&i.ID, &i.Name)
+func (q *Queries) CreateTeam(ctx context.Context, name string) (Team, error) {
+	row := q.db.QueryRow(ctx, createTeam, name)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
-const updateTeamName = `-- name: UpdateTeamName :exec
-UPDATE team SET name = $1 WHERE id = 1
+const getTeamByID = `-- name: GetTeamByID :one
+SELECT id, name, created_at, updated_at
+FROM teams
+WHERE id = $1
 `
 
-func (q *Queries) UpdateTeamName(ctx context.Context, name string) error {
-	_, err := q.db.Exec(ctx, updateTeamName, name)
+func (q *Queries) GetTeamByID(ctx context.Context, id pgtype.UUID) (Team, error) {
+	row := q.db.QueryRow(ctx, getTeamByID, id)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listTeamsByUserID = `-- name: ListTeamsByUserID :many
+SELECT t.id, t.name, t.created_at, t.updated_at
+FROM teams t
+JOIN team_members tm ON tm.team_id = t.id
+WHERE tm.user_id = $1
+ORDER BY t.created_at ASC
+`
+
+func (q *Queries) ListTeamsByUserID(ctx context.Context, userID pgtype.UUID) ([]Team, error) {
+	rows, err := q.db.Query(ctx, listTeamsByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Team
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateTeamName = `-- name: UpdateTeamName :exec
+UPDATE teams SET name = $2, updated_at = now()
+WHERE id = $1
+`
+
+type UpdateTeamNameParams struct {
+	ID   pgtype.UUID
+	Name string
+}
+
+func (q *Queries) UpdateTeamName(ctx context.Context, arg UpdateTeamNameParams) error {
+	_, err := q.db.Exec(ctx, updateTeamName, arg.ID, arg.Name)
 	return err
 }
