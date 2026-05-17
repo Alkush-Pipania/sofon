@@ -166,6 +166,7 @@ run_step "Fetching files from GitHub" bash -c "
   _dl installer/deploy.sh
   _dl installer/doctor.sh
   _dl installer/update.sh
+  _dl installer/uninstall.sh
   _dl deploy/docker-compose.prod.yml
   _dl deploy/config.production.yaml.tmpl
   _dl deploy/Caddyfile.domain.tmpl
@@ -175,7 +176,9 @@ run_step "Fetching files from GitHub" bash -c "
 
 chmod +x "${WORK_DIR}/installer/setup.sh" \
          "${WORK_DIR}/installer/deploy.sh" \
-         "${WORK_DIR}/installer/doctor.sh"
+         "${WORK_DIR}/installer/doctor.sh" \
+         "${WORK_DIR}/installer/update.sh" \
+         "${WORK_DIR}/installer/uninstall.sh"
 
 log_ok "Installer files ready"
 
