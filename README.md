@@ -105,6 +105,3 @@ Each monitor can be configured to notify specific plugins — not every alert ne
 
 ---
 
-## License
-
-MIT
