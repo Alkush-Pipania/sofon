@@ -176,12 +176,14 @@ printf "\n"
 
 mkdir -p "${INSTALL_DIR}/deploy" "${INSTALL_DIR}/config" "${INSTALL_DIR}/installer"
 cp "${ROOT_DIR}/deploy/docker-compose.prod.yml" "${INSTALL_DIR}/deploy/docker-compose.prod.yml"
-cp "${SCRIPT_DIR}/deploy.sh"  "${INSTALL_DIR}/installer/deploy.sh"
-cp "${SCRIPT_DIR}/doctor.sh"  "${INSTALL_DIR}/installer/doctor.sh"
-cp "${SCRIPT_DIR}/update.sh"  "${INSTALL_DIR}/installer/update.sh"
+cp "${SCRIPT_DIR}/deploy.sh"     "${INSTALL_DIR}/installer/deploy.sh"
+cp "${SCRIPT_DIR}/doctor.sh"     "${INSTALL_DIR}/installer/doctor.sh"
+cp "${SCRIPT_DIR}/update.sh"     "${INSTALL_DIR}/installer/update.sh"
+cp "${SCRIPT_DIR}/uninstall.sh"  "${INSTALL_DIR}/installer/uninstall.sh"
 chmod +x "${INSTALL_DIR}/installer/deploy.sh" \
          "${INSTALL_DIR}/installer/doctor.sh" \
-         "${INSTALL_DIR}/installer/update.sh"
+         "${INSTALL_DIR}/installer/update.sh" \
+         "${INSTALL_DIR}/installer/uninstall.sh"
 log_ok "Copied runtime files"
 
 cat > "${INSTALL_DIR}/.env" <<EOF
@@ -231,4 +233,5 @@ fi
 printf "  ${BOLD}Install dir:${RESET}  ${INSTALL_DIR}\n"
 printf "  ${BOLD}Diagnostics:${RESET}  sudo ${INSTALL_DIR}/installer/doctor.sh ${INSTALL_DIR}\n"
 printf "  ${BOLD}To upgrade:${RESET}   sudo ${INSTALL_DIR}/installer/update.sh --version <new-version>\n"
+printf "  ${BOLD}To uninstall:${RESET} sudo ${INSTALL_DIR}/installer/uninstall.sh\n"
 printf "\n"
