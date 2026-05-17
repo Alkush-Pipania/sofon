@@ -7,7 +7,8 @@ INSERT INTO monitors (
     timeout_sec,
     latency_threshold_ms,
     expected_status,
-    alert_email
+    alert_email,
+    notification_channels
 ) VALUES (
              $1,
              $2,
@@ -16,22 +17,23 @@ INSERT INTO monitors (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9
          )
     RETURNING id;
 
 -- name: GetMonitorByID :one
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
+SELECT id, user_id, team_id, url, alert_email, notification_channels, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
 FROM monitors
 WHERE id = $1;
 
 -- name: GetMonitorByTeamID :one
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
+SELECT id, user_id, team_id, url, alert_email, notification_channels, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
 FROM monitors
 WHERE id = $1 AND team_id = $2;
 
 -- name: ListMonitorsByTeamCursor :many
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec,
+SELECT id, user_id, team_id, url, alert_email, notification_channels, interval_sec, timeout_sec,
        latency_threshold_ms, expected_status, enabled, created_at,
        EXISTS (
            SELECT 1 FROM monitor_incidents mi

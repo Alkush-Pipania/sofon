@@ -70,7 +70,7 @@ export function NewMonitorDialog({ trigger }: NewMonitorDialogProps) {
         try {
             // Omit latency/status when 0 so backend receives null (not specified)
             const { latency_threshold_ms, expected_status, ...rest } = form;
-            const payload: CreateMonitorRequest = { ...rest };
+            const payload: CreateMonitorRequest = { ...rest, notification_channels: [] };
             if (latency_threshold_ms) payload.latency_threshold_ms = latency_threshold_ms;
             if (expected_status) payload.expected_status = expected_status;
 

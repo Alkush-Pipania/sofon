@@ -79,16 +79,16 @@ func (rp *ResultProcessor) handleSuccess(r executor.HTTPResult) {
 				Msg("failed to mark recovered alert decision")
 		} else if shouldSendRecovered {
 			rp.alertChan <- alert.AlertEvent{
-				IncidentID: closedIncidentID,
-				Type:       alert.AlertTypeRecovered,
-				MonitorID:  r.MonitorID,
-				TeamID:     r.TeamID,
-				MonitorURL: r.MonitorURL,
-				AlertEmail: r.AlertEmail,
-				Reason:     "RECOVERED",
-				StatusCode: r.Status,
-				LatencyMs:  r.LatencyMs,
-				CheckedAt:  r.CheckedAt,
+				IncidentID:           closedIncidentID,
+				Type:                 alert.AlertTypeRecovered,
+				MonitorID:            r.MonitorID,
+				TeamID:               r.TeamID,
+				MonitorURL:           r.MonitorURL,
+				NotificationChannels: r.NotificationChannels,
+				Reason:               "RECOVERED",
+				StatusCode:           r.Status,
+				LatencyMs:            r.LatencyMs,
+				CheckedAt:            r.CheckedAt,
 			}
 			rp.logger.Info().
 				Str("monitor_id", r.MonitorID.String()).

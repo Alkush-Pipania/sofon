@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/alkush-pipania/sofon/pkg/apperror"
@@ -31,14 +32,15 @@ func (r *Repository) Create(ctx context.Context, monitor CreateMonitor) (uuid.UU
 	const op string = "repo.monitor.create"
 
 	monitorID, err := r.querier.CreateMonitor(ctx, db.CreateMonitorParams{
-		UserID:             utils.ToPgUUID(monitor.UserID),
-		TeamID:             utils.ToPgUUID(monitor.TeamID),
-		Url:                monitor.Url,
-		IntervalSec:        monitor.IntervalSec,
-		TimeoutSec:         monitor.TimeoutSec,
-		LatencyThresholdMs: utils.ToPgInt4(monitor.LatencyThresholdMs),
-		ExpectedStatus:     utils.ToPgInt4(monitor.ExpectedStatus),
-		AlertEmail:         utils.ToPgText(monitor.AlertEmail),
+		UserID:               utils.ToPgUUID(monitor.UserID),
+		TeamID:               utils.ToPgUUID(monitor.TeamID),
+		Url:                  monitor.Url,
+		IntervalSec:          monitor.IntervalSec,
+		TimeoutSec:           monitor.TimeoutSec,
+		LatencyThresholdMs:   utils.ToPgInt4(monitor.LatencyThresholdMs),
+		ExpectedStatus:       utils.ToPgInt4(monitor.ExpectedStatus),
+		AlertEmail:           utils.ToPgText(""),
+		NotificationChannels: channelsToString(monitor.NotificationChannels),
 	})
 	if err == nil {
 		return utils.FromPgUUID(monitorID), nil
@@ -83,16 +85,16 @@ func (r *Repository) GetByID(ctx context.Context, monitorID uuid.UUID) (Monitor,
 	monitor, err := r.querier.GetMonitorByID(ctx, utils.ToPgUUID(monitorID))
 	if err == nil {
 		return Monitor{
-			ID:                 utils.FromPgUUID(monitor.ID),
-			TeamID:             utils.FromPgUUID(monitor.TeamID),
-			UserID:             utils.FromPgUUID(monitor.UserID),
-			Url:                monitor.Url,
-			IntervalSec:        monitor.IntervalSec,
-			TimeoutSec:         monitor.TimeoutSec,
-			LatencyThresholdMs: utils.FromPgInt4(monitor.LatencyThresholdMs),
-			ExpectedStatus:     utils.FromPgInt4(monitor.ExpectedStatus),
-			Enabled:            monitor.Enabled,
-			AlertEmail:         utils.FromPgText(monitor.AlertEmail),
+			ID:                   utils.FromPgUUID(monitor.ID),
+			TeamID:               utils.FromPgUUID(monitor.TeamID),
+			UserID:               utils.FromPgUUID(monitor.UserID),
+			Url:                  monitor.Url,
+			IntervalSec:          monitor.IntervalSec,
+			TimeoutSec:           monitor.TimeoutSec,
+			LatencyThresholdMs:   utils.FromPgInt4(monitor.LatencyThresholdMs),
+			ExpectedStatus:       utils.FromPgInt4(monitor.ExpectedStatus),
+			Enabled:              monitor.Enabled,
+			NotificationChannels: channelsFromString(monitor.NotificationChannels),
 		}, nil
 	}
 
@@ -139,16 +141,16 @@ func (r *Repository) Get(ctx context.Context, teamID, monitorID uuid.UUID) (Moni
 	})
 	if err == nil {
 		return Monitor{
-			ID:                 utils.FromPgUUID(monitor.ID),
-			TeamID:             utils.FromPgUUID(monitor.TeamID),
-			UserID:             utils.FromPgUUID(monitor.UserID),
-			Url:                monitor.Url,
-			IntervalSec:        monitor.IntervalSec,
-			TimeoutSec:         monitor.TimeoutSec,
-			LatencyThresholdMs: utils.FromPgInt4(monitor.LatencyThresholdMs),
-			ExpectedStatus:     utils.FromPgInt4(monitor.ExpectedStatus),
-			Enabled:            monitor.Enabled,
-			AlertEmail:         utils.FromPgText(monitor.AlertEmail),
+			ID:                   utils.FromPgUUID(monitor.ID),
+			TeamID:               utils.FromPgUUID(monitor.TeamID),
+			UserID:               utils.FromPgUUID(monitor.UserID),
+			Url:                  monitor.Url,
+			IntervalSec:          monitor.IntervalSec,
+			TimeoutSec:           monitor.TimeoutSec,
+			LatencyThresholdMs:   utils.FromPgInt4(monitor.LatencyThresholdMs),
+			ExpectedStatus:       utils.FromPgInt4(monitor.ExpectedStatus),
+			Enabled:              monitor.Enabled,
+			NotificationChannels: channelsFromString(monitor.NotificationChannels),
 		}, nil
 	}
 
@@ -212,18 +214,18 @@ func (r *Repository) GetAll(ctx context.Context, teamID uuid.UUID, opts ListMoni
 		for i := range rows {
 			row := &rows[i]
 			monitors = append(monitors, Monitor{
-				ID:                 utils.FromPgUUID(row.ID),
-				TeamID:             utils.FromPgUUID(row.TeamID),
-				UserID:             utils.FromPgUUID(row.UserID),
-				Url:                row.Url,
-				IntervalSec:        row.IntervalSec,
-				TimeoutSec:         row.TimeoutSec,
-				LatencyThresholdMs: utils.FromPgInt4(row.LatencyThresholdMs),
-				ExpectedStatus:     utils.FromPgInt4(row.ExpectedStatus),
-				Enabled:            row.Enabled,
-				AlertEmail:         utils.FromPgText(row.AlertEmail),
-				CreatedAt:          utils.FromPgTimestamptz(row.CreatedAt),
-				IsDown:             row.IsDown,
+				ID:                   utils.FromPgUUID(row.ID),
+				TeamID:               utils.FromPgUUID(row.TeamID),
+				UserID:               utils.FromPgUUID(row.UserID),
+				Url:                  row.Url,
+				IntervalSec:          row.IntervalSec,
+				TimeoutSec:           row.TimeoutSec,
+				LatencyThresholdMs:   utils.FromPgInt4(row.LatencyThresholdMs),
+				ExpectedStatus:       utils.FromPgInt4(row.ExpectedStatus),
+				Enabled:              row.Enabled,
+				NotificationChannels: channelsFromString(row.NotificationChannels),
+				CreatedAt:            utils.FromPgTimestamptz(row.CreatedAt),
+				IsDown:               row.IsDown,
 			})
 		}
 		hasMore := len(monitors) > int(opts.Limit)
@@ -358,4 +360,15 @@ func (r *Repository) SetEnabled(ctx context.Context, teamID, monitorID uuid.UUID
 		Message: "internal server error",
 		Err:     err,
 	}
+}
+
+func channelsToString(channels []string) string {
+	return strings.Join(channels, ",")
+}
+
+func channelsFromString(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	return strings.Split(s, ",")
 }

@@ -20,7 +20,8 @@ INSERT INTO monitors (
     timeout_sec,
     latency_threshold_ms,
     expected_status,
-    alert_email
+    alert_email,
+    notification_channels
 ) VALUES (
              $1,
              $2,
@@ -29,20 +30,22 @@ INSERT INTO monitors (
              $5,
              $6,
              $7,
-             $8
+             $8,
+             $9
          )
     RETURNING id
 `
 
 type CreateMonitorParams struct {
-	UserID             pgtype.UUID
-	TeamID             pgtype.UUID
-	Url                string
-	IntervalSec        int32
-	TimeoutSec         int32
-	LatencyThresholdMs pgtype.Int4
-	ExpectedStatus     pgtype.Int4
-	AlertEmail         pgtype.Text
+	UserID               pgtype.UUID
+	TeamID               pgtype.UUID
+	Url                  string
+	IntervalSec          int32
+	TimeoutSec           int32
+	LatencyThresholdMs   pgtype.Int4
+	ExpectedStatus       pgtype.Int4
+	AlertEmail           pgtype.Text
+	NotificationChannels string
 }
 
 func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (pgtype.UUID, error) {
@@ -55,6 +58,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (p
 		arg.LatencyThresholdMs,
 		arg.ExpectedStatus,
 		arg.AlertEmail,
+		arg.NotificationChannels,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -80,22 +84,23 @@ func (q *Queries) DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (i
 }
 
 const getMonitorByID = `-- name: GetMonitorByID :one
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
+SELECT id, user_id, team_id, url, alert_email, notification_channels, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
 FROM monitors
 WHERE id = $1
 `
 
 type GetMonitorByIDRow struct {
-	ID                 pgtype.UUID
-	UserID             pgtype.UUID
-	TeamID             pgtype.UUID
-	Url                string
-	AlertEmail         pgtype.Text
-	IntervalSec        int32
-	TimeoutSec         int32
-	LatencyThresholdMs pgtype.Int4
-	ExpectedStatus     pgtype.Int4
-	Enabled            bool
+	ID                   pgtype.UUID
+	UserID               pgtype.UUID
+	TeamID               pgtype.UUID
+	Url                  string
+	AlertEmail           pgtype.Text
+	NotificationChannels string
+	IntervalSec          int32
+	TimeoutSec           int32
+	LatencyThresholdMs   pgtype.Int4
+	ExpectedStatus       pgtype.Int4
+	Enabled              bool
 }
 
 func (q *Queries) GetMonitorByID(ctx context.Context, id pgtype.UUID) (GetMonitorByIDRow, error) {
@@ -107,6 +112,7 @@ func (q *Queries) GetMonitorByID(ctx context.Context, id pgtype.UUID) (GetMonito
 		&i.TeamID,
 		&i.Url,
 		&i.AlertEmail,
+		&i.NotificationChannels,
 		&i.IntervalSec,
 		&i.TimeoutSec,
 		&i.LatencyThresholdMs,
@@ -117,7 +123,7 @@ func (q *Queries) GetMonitorByID(ctx context.Context, id pgtype.UUID) (GetMonito
 }
 
 const getMonitorByTeamID = `-- name: GetMonitorByTeamID :one
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
+SELECT id, user_id, team_id, url, alert_email, notification_channels, interval_sec, timeout_sec, latency_threshold_ms, expected_status, enabled
 FROM monitors
 WHERE id = $1 AND team_id = $2
 `
@@ -128,16 +134,17 @@ type GetMonitorByTeamIDParams struct {
 }
 
 type GetMonitorByTeamIDRow struct {
-	ID                 pgtype.UUID
-	UserID             pgtype.UUID
-	TeamID             pgtype.UUID
-	Url                string
-	AlertEmail         pgtype.Text
-	IntervalSec        int32
-	TimeoutSec         int32
-	LatencyThresholdMs pgtype.Int4
-	ExpectedStatus     pgtype.Int4
-	Enabled            bool
+	ID                   pgtype.UUID
+	UserID               pgtype.UUID
+	TeamID               pgtype.UUID
+	Url                  string
+	AlertEmail           pgtype.Text
+	NotificationChannels string
+	IntervalSec          int32
+	TimeoutSec           int32
+	LatencyThresholdMs   pgtype.Int4
+	ExpectedStatus       pgtype.Int4
+	Enabled              bool
 }
 
 func (q *Queries) GetMonitorByTeamID(ctx context.Context, arg GetMonitorByTeamIDParams) (GetMonitorByTeamIDRow, error) {
@@ -149,6 +156,7 @@ func (q *Queries) GetMonitorByTeamID(ctx context.Context, arg GetMonitorByTeamID
 		&i.TeamID,
 		&i.Url,
 		&i.AlertEmail,
+		&i.NotificationChannels,
 		&i.IntervalSec,
 		&i.TimeoutSec,
 		&i.LatencyThresholdMs,
@@ -159,7 +167,7 @@ func (q *Queries) GetMonitorByTeamID(ctx context.Context, arg GetMonitorByTeamID
 }
 
 const listMonitorsByTeamCursor = `-- name: ListMonitorsByTeamCursor :many
-SELECT id, user_id, team_id, url, alert_email, interval_sec, timeout_sec,
+SELECT id, user_id, team_id, url, alert_email, notification_channels, interval_sec, timeout_sec,
        latency_threshold_ms, expected_status, enabled, created_at,
        EXISTS (
            SELECT 1 FROM monitor_incidents mi
@@ -183,18 +191,19 @@ type ListMonitorsByTeamCursorParams struct {
 }
 
 type ListMonitorsByTeamCursorRow struct {
-	ID                 pgtype.UUID
-	UserID             pgtype.UUID
-	TeamID             pgtype.UUID
-	Url                string
-	AlertEmail         pgtype.Text
-	IntervalSec        int32
-	TimeoutSec         int32
-	LatencyThresholdMs pgtype.Int4
-	ExpectedStatus     pgtype.Int4
-	Enabled            bool
-	CreatedAt          pgtype.Timestamptz
-	IsDown             bool
+	ID                   pgtype.UUID
+	UserID               pgtype.UUID
+	TeamID               pgtype.UUID
+	Url                  string
+	AlertEmail           pgtype.Text
+	NotificationChannels string
+	IntervalSec          int32
+	TimeoutSec           int32
+	LatencyThresholdMs   pgtype.Int4
+	ExpectedStatus       pgtype.Int4
+	Enabled              bool
+	CreatedAt            pgtype.Timestamptz
+	IsDown               bool
 }
 
 func (q *Queries) ListMonitorsByTeamCursor(ctx context.Context, arg ListMonitorsByTeamCursorParams) ([]ListMonitorsByTeamCursorRow, error) {
@@ -217,6 +226,7 @@ func (q *Queries) ListMonitorsByTeamCursor(ctx context.Context, arg ListMonitors
 			&i.TeamID,
 			&i.Url,
 			&i.AlertEmail,
+			&i.NotificationChannels,
 			&i.IntervalSec,
 			&i.TimeoutSec,
 			&i.LatencyThresholdMs,

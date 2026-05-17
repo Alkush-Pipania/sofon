@@ -62,14 +62,14 @@ func (h *Handler) CreateMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mID, err := h.service.CreateMonitor(ctx, CreateMonitor{
-		TeamID:             tm.TeamID,
-		UserID:             userID,
-		Url:                req.Url,
-		IntervalSec:        req.IntervalSec,
-		TimeoutSec:         req.TimeoutSec,
-		LatencyThresholdMs: req.LatencyThresholdMs,
-		ExpectedStatus:     req.ExpectedStatus,
-		AlertEmail:         req.AlertEmail,
+		TeamID:               tm.TeamID,
+		UserID:               userID,
+		Url:                  req.Url,
+		IntervalSec:          req.IntervalSec,
+		TimeoutSec:           req.TimeoutSec,
+		LatencyThresholdMs:   req.LatencyThresholdMs,
+		ExpectedStatus:       req.ExpectedStatus,
+		NotificationChannels: req.NotificationChannels,
 	})
 	if err != nil {
 		h.logger.Error().Str("op", op).Str("req_id", reqID).Err(err).Msg("create monitor error")
@@ -105,14 +105,14 @@ func (h *Handler) GetMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.WriteJSON(w, http.StatusOK, reqID, "monitor retrieved", GetMonitorResponse{
-		ID:                 mon.ID.String(),
-		Url:                mon.Url,
-		AlertEmail:         mon.AlertEmail,
-		IntervalSec:        mon.IntervalSec,
-		TimeoutSec:         mon.TimeoutSec,
-		LatencyThresholdMs: mon.LatencyThresholdMs,
-		ExpectedStatus:     mon.ExpectedStatus,
-		Enabled:            mon.Enabled,
+		ID:                   mon.ID.String(),
+		Url:                  mon.Url,
+		IntervalSec:          mon.IntervalSec,
+		TimeoutSec:           mon.TimeoutSec,
+		LatencyThresholdMs:   mon.LatencyThresholdMs,
+		ExpectedStatus:       mon.ExpectedStatus,
+		Enabled:              mon.Enabled,
+		NotificationChannels: mon.NotificationChannels,
 	})
 }
 
@@ -161,15 +161,15 @@ func (h *Handler) GetAllMonitors(w http.ResponseWriter, r *http.Request) {
 	for i := range page.Monitors {
 		mon := &page.Monitors[i]
 		m = append(m, GetMonitorResponse{
-			ID:                 mon.ID.String(),
-			Url:                mon.Url,
-			IntervalSec:        mon.IntervalSec,
-			TimeoutSec:         mon.TimeoutSec,
-			LatencyThresholdMs: mon.LatencyThresholdMs,
-			ExpectedStatus:     mon.ExpectedStatus,
-			Enabled:            mon.Enabled,
-			AlertEmail:         mon.AlertEmail,
-			IsDown:             mon.IsDown,
+			ID:                   mon.ID.String(),
+			Url:                  mon.Url,
+			IntervalSec:          mon.IntervalSec,
+			TimeoutSec:           mon.TimeoutSec,
+			LatencyThresholdMs:   mon.LatencyThresholdMs,
+			ExpectedStatus:       mon.ExpectedStatus,
+			Enabled:              mon.Enabled,
+			IsDown:               mon.IsDown,
+			NotificationChannels: mon.NotificationChannels,
 		})
 	}
 

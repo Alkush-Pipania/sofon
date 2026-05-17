@@ -104,16 +104,16 @@ func (rp *ResultProcessor) handleFailure(r executor.HTTPResult) {
 	rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Created incident in DB")
 
 	rp.alertChan <- alert.AlertEvent{
-		IncidentID: incidentID,
-		Type:       alert.AlertTypeDown,
-		MonitorID:  r.MonitorID,
-		TeamID:     r.TeamID,
-		MonitorURL: r.MonitorURL,
-		AlertEmail: r.AlertEmail,
-		Reason:     r.Reason,
-		StatusCode: r.Status,
-		LatencyMs:  r.LatencyMs,
-		CheckedAt:  r.CheckedAt,
+		IncidentID:           incidentID,
+		Type:                 alert.AlertTypeDown,
+		MonitorID:            r.MonitorID,
+		TeamID:               r.TeamID,
+		MonitorURL:           r.MonitorURL,
+		NotificationChannels: r.NotificationChannels,
+		Reason:               r.Reason,
+		StatusCode:           r.Status,
+		LatencyMs:            r.LatencyMs,
+		CheckedAt:            r.CheckedAt,
 	}
 	rp.logger.Info().Str("monitor_id", r.MonitorID.String()).Msg("Send Alert to alert channel")
 }

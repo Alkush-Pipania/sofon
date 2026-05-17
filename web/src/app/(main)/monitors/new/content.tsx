@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-    Globe, Mail, Timer, Clock, Gauge, ShieldCheck, ArrowLeft, Loader2,
+    Globe, Timer, Clock, Gauge, ShieldCheck, ArrowLeft, Loader2, Bell, CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,25 +12,44 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useMonitorStore, type CreateMonitorRequest } from "@/store/monitor-store";
 import { useTeamStore } from "@/store/team-store";
+import { usePluginStore, type Plugin } from "@/store/plugin-store";
 import { parseApiError } from "@/lib/api-error";
+
+const LS_KEY = "sofon:monitor:defaults";
 
 interface MonitorFormData {
     url: string;
-    alert_email: string;
     interval_sec: number;
     timeout_sec: number;
     latency_threshold_ms: number;
     expected_status: number;
+    notification_channels: string[];
 }
 
-const DEFAULTS: MonitorFormData = {
+const FALLBACK_DEFAULTS: MonitorFormData = {
     url: "",
-    alert_email: "",
     interval_sec: 60,
     timeout_sec: 120,
     latency_threshold_ms: 0,
     expected_status: 0,
+    notification_channels: [],
 };
+
+function loadSavedDefaults(): Partial<MonitorFormData> {
+    try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return {};
+        return JSON.parse(raw) as Partial<MonitorFormData>;
+    } catch {
+        return {};
+    }
+}
+
+function saveDefaults(data: Omit<MonitorFormData, "url">) {
+    try {
+        localStorage.setItem(LS_KEY, JSON.stringify(data));
+    } catch { /* ignore */ }
+}
 
 const INTERVAL_PRESETS = [
     { label: "1m",  value: 60 },
@@ -126,10 +145,60 @@ function FieldRow({
     );
 }
 
+// ── Plugin selector card ──────────────────────────────────────────────────────
+
+const PLUGIN_META: Record<string, { name: string; description: string }> = {
+    resend:  { name: "Resend Email",  description: "Send alert emails via Resend." },
+    zenduty: { name: "Zenduty",       description: "Create/resolve Zenduty incidents." },
+};
+
+function PluginCard({
+    plugin,
+    selected,
+    onToggle,
+}: {
+    plugin: Plugin;
+    selected: boolean;
+    onToggle: () => void;
+}) {
+    const meta = PLUGIN_META[plugin.type] ?? { name: plugin.type, description: "" };
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors w-full
+                ${selected
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/30 hover:bg-muted/30"
+                }`}
+        >
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
+                selected ? "border-primary/30 bg-primary/10" : "border-border bg-muted"
+            }`}>
+                {selected
+                    ? <CheckCircle2 className="h-4 w-4 text-primary" />
+                    : <div className="h-4 w-4 rounded-sm border-2 border-muted-foreground/30" />
+                }
+            </div>
+            <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium leading-tight">{meta.name}</p>
+                <p className="text-xs text-muted-foreground">{meta.description}</p>
+            </div>
+            {plugin.enabled
+                ? <Badge variant="outline" className="shrink-0 border-emerald-500/30 bg-emerald-500/10 text-emerald-500 text-[10px]">Active</Badge>
+                : <Badge variant="outline" className="shrink-0 text-[10px] text-zinc-500">Disabled</Badge>
+            }
+        </button>
+    );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function NewMonitorPage() {
     const router = useRouter();
     const createMonitor = useMonitorStore((s) => s.createMonitor);
     const currentTeam = useTeamStore((s) => s.currentTeam);
+    const { plugins, fetchPlugins, loading: pluginsLoading } = usePluginStore();
 
     useEffect(() => {
         if (currentTeam === null) {
@@ -137,23 +206,55 @@ export default function NewMonitorPage() {
         }
     }, [currentTeam, router]);
 
-    const [form, setForm] = useState<MonitorFormData>({ ...DEFAULTS });
+    useEffect(() => {
+        fetchPlugins();
+    }, [fetchPlugins]);
+
+    const [form, setForm] = useState<MonitorFormData>(() => ({
+        ...FALLBACK_DEFAULTS,
+        ...loadSavedDefaults(),
+        url: "",
+    }));
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const update = <K extends keyof MonitorFormData>(key: K, value: MonitorFormData[K]) =>
         setForm((prev) => ({ ...prev, [key]: value }));
 
+    const toggleChannel = (type: string) => {
+        setForm((prev) => {
+            const has = prev.notification_channels.includes(type);
+            return {
+                ...prev,
+                notification_channels: has
+                    ? prev.notification_channels.filter((c) => c !== type)
+                    : [...prev.notification_channels, type],
+            };
+        });
+    };
+
+    const activePlugins = plugins.filter((p) => p.enabled);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitting(true);
         setError(null);
         try {
-            const { latency_threshold_ms, expected_status, ...rest } = form;
-            const payload: CreateMonitorRequest = { ...rest };
+            const { latency_threshold_ms, expected_status, url, notification_channels, ...rest } = form;
+            const payload: CreateMonitorRequest = { ...rest, url, notification_channels };
             if (latency_threshold_ms) payload.latency_threshold_ms = latency_threshold_ms;
             if (expected_status) payload.expected_status = expected_status;
             await createMonitor(payload);
+
+            // Persist non-URL preferences for next time
+            saveDefaults({
+                interval_sec: form.interval_sec,
+                timeout_sec: form.timeout_sec,
+                latency_threshold_ms: form.latency_threshold_ms,
+                expected_status: form.expected_status,
+                notification_channels: form.notification_channels,
+            });
+
             router.push("/monitors");
         } catch (err) {
             setError(parseApiError(err, "Failed to create monitor."));
@@ -208,7 +309,7 @@ export default function NewMonitorPage() {
                         <SectionHeader
                             step={1}
                             title="Basics"
-                            description="The endpoint you want to monitor and where to send alerts."
+                            description="The endpoint you want to monitor."
                         />
                     </div>
                     <div className="px-6">
@@ -227,29 +328,62 @@ export default function NewMonitorPage() {
                                 autoFocus
                             />
                         </FieldRow>
-
-                        <FieldRow
-                            icon={Mail}
-                            label="Alert Email"
-                            hint="Leave empty to use the default alert email from your server config."
-                            optional
-                        >
-                            <Input
-                                type="email"
-                                placeholder="you@company.com"
-                                value={form.alert_email}
-                                onChange={(e) => update("alert_email", e.target.value)}
-                                className="max-w-sm"
-                            />
-                        </FieldRow>
                     </div>
                 </Card>
 
-                {/* ── 2. Timing ── */}
+                {/* ── 2. Notifications ── */}
                 <Card className="gap-0 overflow-hidden py-0">
                     <div className="border-b border-border px-6 py-4">
                         <SectionHeader
                             step={2}
+                            title="Notifications"
+                            description="Choose which plugins should alert you when this monitor goes down."
+                        />
+                    </div>
+                    <div className="px-6 py-6">
+                        {pluginsLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Loading plugins…
+                            </div>
+                        ) : activePlugins.length === 0 ? (
+                            <div className="flex items-start gap-3 rounded-lg border border-dashed border-border p-4">
+                                <Bell className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                <div>
+                                    <p className="text-sm font-medium">No active plugins</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                        Set up a notification plugin first, then come back to create a monitor.{" "}
+                                        <Link href="/plugins" className="underline underline-offset-2 hover:text-foreground">
+                                            Go to Plugins →
+                                        </Link>
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {activePlugins.map((plugin) => (
+                                    <PluginCard
+                                        key={plugin.type}
+                                        plugin={plugin}
+                                        selected={form.notification_channels.includes(plugin.type)}
+                                        onToggle={() => toggleChannel(plugin.type)}
+                                    />
+                                ))}
+                                {form.notification_channels.length === 0 && (
+                                    <p className="text-xs text-amber-500 pt-1">
+                                        No channels selected — this monitor will fire no alerts.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </Card>
+
+                {/* ── 3. Timing ── */}
+                <Card className="gap-0 overflow-hidden py-0">
+                    <div className="border-b border-border px-6 py-4">
+                        <SectionHeader
+                            step={3}
                             title="Timing"
                             description="How often to check and how long to wait for a response."
                         />
@@ -306,11 +440,11 @@ export default function NewMonitorPage() {
                     </div>
                 </Card>
 
-                {/* ── 3. Thresholds ── */}
+                {/* ── 4. Thresholds ── */}
                 <Card className="gap-0 overflow-hidden py-0">
                     <div className="border-b border-border px-6 py-4">
                         <SectionHeader
-                            step={3}
+                            step={4}
                             title="Thresholds"
                             description="Optional conditions that trigger an alert beyond just being unreachable."
                         />

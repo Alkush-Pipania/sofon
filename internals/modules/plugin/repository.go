@@ -132,8 +132,9 @@ func (r *Repository) GetResendConfig(ctx context.Context, teamID uuid.UUID) (ale
 	}
 
 	return alert.ResendEmailConfig{
-		APIKey:      configMap["api_key"],
-		SenderEmail: configMap["sender_email"],
+		APIKey:         configMap["api_key"],
+		SenderEmail:    configMap["sender_email"],
+		RecipientEmail: configMap["recipient_email"],
 	}, true, nil
 }
 

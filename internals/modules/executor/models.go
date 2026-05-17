@@ -17,5 +17,5 @@ type HTTPResult struct {
 	Retryable   bool
 	CheckedAt   time.Time
 	IntervalSec int32
-	AlertEmail  string
+	NotificationChannels []string
 }

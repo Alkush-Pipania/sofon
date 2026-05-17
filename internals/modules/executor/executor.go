@@ -150,7 +150,7 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 			Retryable:   false,
 			CheckedAt:   time.Now(),
 			IntervalSec: monitor.IntervalSec,
-			AlertEmail:  monitor.AlertEmail,
+			NotificationChannels: monitor.NotificationChannels,
 		}
 	}
 	resp, err := ew.httpClient.Do(req)
@@ -169,7 +169,7 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 			Retryable:   isRetryable,
 			CheckedAt:   time.Now(),
 			IntervalSec: monitor.IntervalSec,
-			AlertEmail:  monitor.AlertEmail,
+			NotificationChannels: monitor.NotificationChannels,
 		}
 	}
 
@@ -213,8 +213,8 @@ func (ew *Executor) executeHTTPCheck(monitor monitor.Monitor) HTTPResult {
 		Reason:      "",
 		Retryable:   false,
 		CheckedAt:   time.Now(),
-		IntervalSec: monitor.IntervalSec,
-		AlertEmail:  monitor.AlertEmail,
+		IntervalSec:          monitor.IntervalSec,
+		NotificationChannels: monitor.NotificationChannels,
 	}
 }
 

@@ -25,8 +25,9 @@ type PluginConfigGetter interface {
 
 // ResendEmailConfig holds only what the alert service needs from a Resend plugin.
 type ResendEmailConfig struct {
-	APIKey      string
-	SenderEmail string
+	APIKey         string
+	SenderEmail    string
+	RecipientEmail string
 }
 
 // PluginCacheClient is satisfied by *redis.Client.
@@ -81,6 +82,18 @@ func (s *AlertService) handleAlerts() {
 	}
 }
 
+func channelEnabled(channels []string, plugin string) bool {
+	if len(channels) == 0 {
+		return true // backward compat: empty = all plugins enabled
+	}
+	for _, c := range channels {
+		if c == plugin {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *AlertService) processAlert(event AlertEvent) {
 	if event.Type == "" {
 		event.Type = AlertTypeDown
@@ -89,9 +102,12 @@ func (s *AlertService) processAlert(event AlertEvent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Fan out to all configured plugins independently.
-	s.handleResend(ctx, event)
-	s.handleZenduty(ctx, event)
+	if channelEnabled(event.NotificationChannels, "resend") {
+		s.handleResend(ctx, event)
+	}
+	if channelEnabled(event.NotificationChannels, "zenduty") {
+		s.handleZenduty(ctx, event)
+	}
 }
 
 func (s *AlertService) handleResend(ctx context.Context, event AlertEvent) {
@@ -111,16 +127,21 @@ func (s *AlertService) handleResend(ctx context.Context, event AlertEvent) {
 			_ = s.persistAlert(event.IncidentID, "", "skipped_no_plugin", time.Time{})
 			return
 		}
-		resendCfg = ResendEmailConfig{APIKey: dbCfg.APIKey, SenderEmail: dbCfg.SenderEmail}
+		resendCfg = ResendEmailConfig{
+			APIKey:         dbCfg.APIKey,
+			SenderEmail:    dbCfg.SenderEmail,
+			RecipientEmail: dbCfg.RecipientEmail,
+		}
 		_ = s.redisCache.SetCachedResendConfig(ctx, event.TeamID, resendCfg, 5*time.Minute)
 	}
 
-	recipient := strings.TrimSpace(event.AlertEmail)
+	// Recipient: use plugin's configured recipient; fall back to sender as last resort.
+	recipient := strings.TrimSpace(resendCfg.RecipientEmail)
 	if recipient == "" {
-		recipient = resendCfg.SenderEmail
+		recipient = strings.TrimSpace(resendCfg.SenderEmail)
 	}
 	if recipient == "" {
-		s.logger.Error().Str("incident_id", event.IncidentID.String()).Msg("resend: no recipient email, skipping")
+		s.logger.Error().Str("incident_id", event.IncidentID.String()).Msg("resend: no recipient email configured, skipping")
 		_ = s.persistAlert(event.IncidentID, "", "failed", time.Time{})
 		return
 	}

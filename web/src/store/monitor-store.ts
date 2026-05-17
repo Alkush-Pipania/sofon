@@ -7,13 +7,13 @@ import { useTeamStore } from "@/store/team-store";
 export interface Monitor {
     id: string;
     url: string;
-    alert_mail: string;
     interval_sec: number;
     timeout_sec: number;
     latency_threshold_ms: number | null;
     expected_status: number | null;
     enabled: boolean;
     is_down: boolean;
+    notification_channels: string[];
 }
 
 interface MonitorsResponse {
@@ -29,11 +29,11 @@ interface MonitorsResponse {
 
 export interface CreateMonitorRequest {
     url: string;
-    alert_email: string;
     interval_sec: number;
     timeout_sec: number;
     latency_threshold_ms?: number;
     expected_status?: number;
+    notification_channels: string[];
 }
 
 interface CreateMonitorResponse {

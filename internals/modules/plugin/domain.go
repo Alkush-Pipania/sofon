@@ -24,6 +24,7 @@ type Plugin struct {
 
 // ResendConfig holds decrypted Resend credentials.
 type ResendConfig struct {
-	APIKey      string `json:"api_key"`
-	SenderEmail string `json:"sender_email"`
+	APIKey         string `json:"api_key"`
+	SenderEmail    string `json:"sender_email"`
+	RecipientEmail string `json:"recipient_email"`
 }

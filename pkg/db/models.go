@@ -35,18 +35,19 @@ type Invitation struct {
 }
 
 type Monitor struct {
-	ID                 pgtype.UUID
-	UserID             pgtype.UUID
-	Url                string
-	AlertEmail         pgtype.Text
-	IntervalSec        int32
-	TimeoutSec         int32
-	LatencyThresholdMs pgtype.Int4
-	ExpectedStatus     pgtype.Int4
-	Enabled            bool
-	UpdatedAt          pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	TeamID             pgtype.UUID
+	ID                   pgtype.UUID
+	UserID               pgtype.UUID
+	Url                  string
+	AlertEmail           pgtype.Text
+	IntervalSec          int32
+	TimeoutSec           int32
+	LatencyThresholdMs   pgtype.Int4
+	ExpectedStatus       pgtype.Int4
+	Enabled              bool
+	UpdatedAt            pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	TeamID               pgtype.UUID
+	NotificationChannels string
 }
 
 type MonitorIncident struct {
