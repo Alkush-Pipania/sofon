@@ -25,9 +25,9 @@ type PluginConfigGetter interface {
 
 // ResendEmailConfig holds only what the alert service needs from a Resend plugin.
 type ResendEmailConfig struct {
-	APIKey         string
-	SenderEmail    string
-	RecipientEmail string
+	APIKey          string
+	SenderEmail     string
+	RecipientEmails []string
 }
 
 // PluginCacheClient is satisfied by *redis.Client.
@@ -128,19 +128,19 @@ func (s *AlertService) handleResend(ctx context.Context, event AlertEvent) {
 			return
 		}
 		resendCfg = ResendEmailConfig{
-			APIKey:         dbCfg.APIKey,
-			SenderEmail:    dbCfg.SenderEmail,
-			RecipientEmail: dbCfg.RecipientEmail,
+			APIKey:          dbCfg.APIKey,
+			SenderEmail:     dbCfg.SenderEmail,
+			RecipientEmails: dbCfg.RecipientEmails,
 		}
 		_ = s.redisCache.SetCachedResendConfig(ctx, event.TeamID, resendCfg, 5*time.Minute)
 	}
 
-	// Recipient: use plugin's configured recipient; fall back to sender as last resort.
-	recipient := strings.TrimSpace(resendCfg.RecipientEmail)
-	if recipient == "" {
-		recipient = strings.TrimSpace(resendCfg.SenderEmail)
+	// Build recipient list; fall back to sender if none configured.
+	recipients := resendCfg.RecipientEmails
+	if len(recipients) == 0 && resendCfg.SenderEmail != "" {
+		recipients = []string{resendCfg.SenderEmail}
 	}
-	if recipient == "" {
+	if len(recipients) == 0 {
 		s.logger.Error().Str("incident_id", event.IncidentID.String()).Msg("resend: no recipient email configured, skipping")
 		_ = s.persistAlert(event.IncidentID, "", "failed", time.Time{})
 		return
@@ -149,23 +149,24 @@ func (s *AlertService) handleResend(ctx context.Context, event AlertEvent) {
 	status := "sent"
 	sentAt := time.Now().UTC()
 
-	resendID, err := s.sendAlertEmail(resendCfg, event, recipient)
+	resendID, err := s.sendAlertEmail(resendCfg, event, recipients)
+	recipientList := strings.Join(recipients, ",")
 	if err != nil {
 		status = "failed"
 		sentAt = time.Time{}
 		s.logger.Error().Err(err).
 			Str("incident_id", event.IncidentID.String()).
-			Str("recipient", recipient).
+			Str("recipients", recipientList).
 			Msg("resend: failed to send incident email")
 	} else {
 		s.logger.Info().
 			Str("incident_id", event.IncidentID.String()).
-			Str("recipient", recipient).
+			Str("recipients", recipientList).
 			Str("resend_email_id", resendID).
 			Msg("resend: incident email sent")
 	}
 
-	_ = s.persistAlert(event.IncidentID, recipient, status, sentAt)
+	_ = s.persistAlert(event.IncidentID, recipientList, status, sentAt)
 }
 
 func (s *AlertService) handleZenduty(ctx context.Context, event AlertEvent) {
@@ -229,7 +230,7 @@ func (s *AlertService) handleZenduty(ctx context.Context, event AlertEvent) {
 		Msg("zenduty: event sent successfully")
 }
 
-func (s *AlertService) sendAlertEmail(cfg ResendEmailConfig, event AlertEvent, recipient string) (string, error) {
+func (s *AlertService) sendAlertEmail(cfg ResendEmailConfig, event AlertEvent, recipients []string) (string, error) {
 	client := resendpkg.NewResendClient(cfg.APIKey)
 
 	subject := fmt.Sprintf("[SOFON][DOWN] Monitor %s is down", event.MonitorID.String())
@@ -247,7 +248,7 @@ func (s *AlertService) sendAlertEmail(cfg ResendEmailConfig, event AlertEvent, r
 
 	return client.SendEmail(sendCtx, &resendpkg.SendEmailRequest{
 		From:    cfg.SenderEmail,
-		To:      []string{recipient},
+		To:      recipients,
 		Subject: subject,
 		Html:    htmlBody,
 		Text:    textBody,

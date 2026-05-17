@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/alkush-pipania/sofon/internals/modules/alert"
 	"github.com/alkush-pipania/sofon/pkg/apperror"
@@ -131,10 +132,19 @@ func (r *Repository) GetResendConfig(ctx context.Context, teamID uuid.UUID) (ale
 		return alert.ResendEmailConfig{}, false, err
 	}
 
+	var recipientEmails []string
+	if raw := configMap["recipient_emails"]; raw != "" {
+		for _, e := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(e); trimmed != "" {
+				recipientEmails = append(recipientEmails, trimmed)
+			}
+		}
+	}
+
 	return alert.ResendEmailConfig{
-		APIKey:         configMap["api_key"],
-		SenderEmail:    configMap["sender_email"],
-		RecipientEmail: configMap["recipient_email"],
+		APIKey:          configMap["api_key"],
+		SenderEmail:     configMap["sender_email"],
+		RecipientEmails: recipientEmails,
 	}, true, nil
 }
 
