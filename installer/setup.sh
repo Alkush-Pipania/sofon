@@ -96,22 +96,8 @@ if [[ -z "${SOFON_AUTH_SECRET}" ]]; then
   log_ok "Generated random JWT secret"
 fi
 
-# ── Section: Alerts ───────────────────────────────────────────────────────────
-printf "\n"
-printf "  ${DIM}%s${RESET}\n" "──────────────────────────────────────────────"
-log_header "Alert Emails"
-printf "\n"
-
-SOFON_OWNER_EMAIL="$(prompt_default "Alert sender email" "alerts@example.com")"
-SOFON_ALERT_KILL_SWITCH="true"
-SOFON_RESEND_API_KEY=""
-
-if prompt_yn "Enable outgoing alert emails via Resend?"; then
-  SOFON_ALERT_KILL_SWITCH="false"
-  SOFON_RESEND_API_KEY="$(prompt_secret "Resend API key")"
-else
-  log_dim "Alert emails disabled — you can enable later by editing ${INSTALL_DIR}/config/config.yaml"
-fi
+# Notification plugins (Resend, Zenduty, etc.) are configured in the Sofon UI
+# after installation — no credentials needed here.
 
 # ── Section: Network ──────────────────────────────────────────────────────────
 printf "\n"
@@ -171,7 +157,7 @@ if [[ -n "${SOFON_DOMAIN}" ]]; then
 else
   log_field "HTTP port"        "${SOFON_HTTP_PORT}"
 fi
-log_field "Alert emails"       "$( [[ "${SOFON_ALERT_KILL_SWITCH}" == "false" ]] && echo "enabled" || echo "disabled" )"
+log_field "Notifications"      "configure via Sofon UI → Plugins after install"
 printf "\n"
 
 if ! prompt_yn "Everything look correct? Proceed with installation?"; then
@@ -204,18 +190,12 @@ POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
 SOFON_DOMAIN=${SOFON_DOMAIN}
-SOFON_OWNER_EMAIL=${SOFON_OWNER_EMAIL}
 SOFON_AUTH_SECRET=${SOFON_AUTH_SECRET}
-SOFON_RESEND_API_KEY=${SOFON_RESEND_API_KEY}
-SOFON_ALERT_KILL_SWITCH=${SOFON_ALERT_KILL_SWITCH}
 SOFON_APP_URL=${SOFON_APP_URL}
 EOF
 log_ok "Written ${INSTALL_DIR}/.env"
 
 sed -e "s/__SOFON_AUTH_SECRET__/$(escape_sed "${SOFON_AUTH_SECRET}")/g" \
-    -e "s/__SOFON_OWNER_EMAIL__/$(escape_sed "${SOFON_OWNER_EMAIL}")/g" \
-    -e "s/__SOFON_RESEND_API_KEY__/$(escape_sed "${SOFON_RESEND_API_KEY}")/g" \
-    -e "s/__SOFON_ALERT_KILL_SWITCH__/$(escape_sed "${SOFON_ALERT_KILL_SWITCH}")/g" \
     -e "s/__POSTGRES_USER__/$(escape_sed "${POSTGRES_USER}")/g" \
     -e "s/__POSTGRES_PASSWORD__/$(escape_sed "${POSTGRES_PASSWORD}")/g" \
     -e "s/__POSTGRES_DB__/$(escape_sed "${POSTGRES_DB}")/g" \
