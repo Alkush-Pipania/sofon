@@ -64,7 +64,7 @@ printf "  ${DIM}%s${RESET}\n" "────────────────�
 log_header "Installation"
 printf "\n"
 
-DEFAULT_IMAGE_TAG="${SOFON_RELEASE_VERSION:-v0.1.2}"
+DEFAULT_IMAGE_TAG="${SOFON_RELEASE_VERSION:-latest}"
 
 INSTALL_DIR="$(prompt_default "Install directory" "/opt/sofon")"
 SOFON_API_IMAGE="$(prompt_default "API image" "ghcr.io/alkush-pipania/sofon-api:${DEFAULT_IMAGE_TAG}")"
