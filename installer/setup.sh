@@ -26,20 +26,23 @@ if [[ ! -e /dev/tty ]]; then
 fi
 
 # ── Prompt helpers ────────────────────────────────────────────────────────────
+# All prompt functions write to _REPLY rather than stdout.
+# Using $() subshells with read </dev/tty hangs on Linux after the first call
+# when the parent shell's stdin is a pipe (e.g. curl | sudo bash).
+_REPLY=""
+
 prompt_default() {
-  local question="$1" default_val="$2" answer
-  # Print prompt to /dev/tty so it shows even inside $() subshells
+  local question="$1" default_val="$2"
   printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "${question}" "${default_val}" >/dev/tty
-  read -r answer </dev/tty
-  printf '%s' "${answer:-${default_val}}"
+  read -r _REPLY </dev/tty
+  _REPLY="${_REPLY:-${default_val}}"
 }
 
 prompt_secret() {
-  local question="$1" answer
+  local question="$1"
   printf "  ${CYAN}?${RESET}  ${BOLD}%s${RESET}: " "${question}" >/dev/tty
-  read -r -s answer </dev/tty
+  read -r -s _REPLY </dev/tty
   printf "\n" >/dev/tty
-  printf '%s' "${answer}"
 }
 
 prompt_yn() {   # returns 0 for yes, 1 for no
@@ -66,9 +69,9 @@ printf "\n"
 
 DEFAULT_IMAGE_TAG="${SOFON_RELEASE_VERSION:-latest}"
 
-INSTALL_DIR="$(prompt_default "Install directory" "/opt/sofon")"
-SOFON_API_IMAGE="$(prompt_default "API image" "ghcr.io/alkush-pipania/sofon-api:${DEFAULT_IMAGE_TAG}")"
-SOFON_WEB_IMAGE="$(prompt_default "Web image" "ghcr.io/alkush-pipania/sofon-web:${DEFAULT_IMAGE_TAG}")"
+prompt_default "Install directory" "/opt/sofon";                                          INSTALL_DIR="${_REPLY}"
+prompt_default "API image" "ghcr.io/alkush-pipania/sofon-api:${DEFAULT_IMAGE_TAG}";       SOFON_API_IMAGE="${_REPLY}"
+prompt_default "Web image" "ghcr.io/alkush-pipania/sofon-web:${DEFAULT_IMAGE_TAG}";       SOFON_WEB_IMAGE="${_REPLY}"
 
 # ── Section: Database ─────────────────────────────────────────────────────────
 printf "\n"
@@ -76,9 +79,9 @@ printf "  ${DIM}%s${RESET}\n" "────────────────�
 log_header "Database"
 printf "\n"
 
-POSTGRES_USER="$(prompt_default "Postgres user" "sofon")"
-POSTGRES_DB="$(prompt_default "Postgres database" "sofon")"
-POSTGRES_PASSWORD="$(prompt_secret "Postgres password (leave empty to auto-generate)")"
+prompt_default "Postgres user" "sofon";                                                   POSTGRES_USER="${_REPLY}"
+prompt_default "Postgres database" "sofon";                                               POSTGRES_DB="${_REPLY}"
+prompt_secret  "Postgres password (leave empty to auto-generate)";                        POSTGRES_PASSWORD="${_REPLY}"
 if [[ -z "${POSTGRES_PASSWORD}" ]]; then
   POSTGRES_PASSWORD="$(random_secret)"
   log_ok "Generated random Postgres password"
@@ -90,7 +93,7 @@ printf "  ${DIM}%s${RESET}\n" "────────────────�
 log_header "Security"
 printf "\n"
 
-SOFON_AUTH_SECRET="$(prompt_secret "JWT auth secret (leave empty to auto-generate)")"
+prompt_secret "JWT auth secret (leave empty to auto-generate)";                           SOFON_AUTH_SECRET="${_REPLY}"
 if [[ -z "${SOFON_AUTH_SECRET}" ]]; then
   SOFON_AUTH_SECRET="$(random_secret)"
   log_ok "Generated random JWT secret"
@@ -112,7 +115,7 @@ SOFON_APP_URL=""
 CADDY_TEMPLATE="${ROOT_DIR}/deploy/Caddyfile.nodomain.tmpl"
 
 if prompt_yn "Use a domain with automatic HTTPS (via Caddy)?"; then
-  SOFON_DOMAIN="$(prompt_default "Domain" "")"
+  prompt_default "Domain" ""; SOFON_DOMAIN="${_REPLY}"
   if [[ -z "${SOFON_DOMAIN}" ]]; then
     log_error "A domain name is required for HTTPS mode."
     exit 1
@@ -121,8 +124,8 @@ if prompt_yn "Use a domain with automatic HTTPS (via Caddy)?"; then
   CADDY_TEMPLATE="${ROOT_DIR}/deploy/Caddyfile.domain.tmpl"
   log_ok "Caddy will obtain a TLS certificate for ${SOFON_DOMAIN}"
 else
-  SOFON_HTTP_PORT="$(prompt_default "HTTP port" "80")"
-  SOFON_HTTPS_PORT="$(prompt_default "HTTPS port" "443")"
+  prompt_default "HTTP port" "80";    SOFON_HTTP_PORT="${_REPLY}"
+  prompt_default "HTTPS port" "443";  SOFON_HTTPS_PORT="${_REPLY}"
 
   # Auto-detect public IP for a sensible default
   printf "  ${DIM}  Detecting public IP...${RESET}\n"
@@ -139,7 +142,7 @@ else
     _default_url="http://localhost:${SOFON_HTTP_PORT}"
   fi
 
-  SOFON_APP_URL="$(prompt_default "App public URL (used in invite links)" "${_default_url}")"
+  prompt_default "App public URL (used in invite links)" "${_default_url}"; SOFON_APP_URL="${_REPLY}"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -219,7 +222,7 @@ printf "\n"
 printf "\n"
 printf "  ${DIM}%s${RESET}\n" "──────────────────────────────────────────────"
 printf "\n"
-printf "  ${BOLD}${GREEN}🎉  Sofon is running!${RESET}\n\n"
+printf "  ${BOLD}\033[1;37mSofon is running!${RESET}\n\n"
 if [[ -n "${SOFON_DOMAIN}" ]]; then
   printf "  ${BOLD}Open:${RESET}         https://${SOFON_DOMAIN}\n"
 else
